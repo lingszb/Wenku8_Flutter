@@ -9,14 +9,14 @@ import 'feature_pages.dart' show ArchiveFeaturePage;
 import 'library_state.dart';
 import 'novel_feed_controller.dart';
 import 'offline_repository.dart';
-import 'tag_catalogue.dart';
+import 'library_search_repository.dart';
 import 'pages.dart' show NovelRow, FeedRefresh, FeedFooter, openDetail;
 
 class AuthorWorksRepository extends NovelRepository {
   const AuthorWorksRepository(
     this.source,
     this.author, {
-    this.localOnly = false,
+    this.localOnly = true,
     this.tagSearch = false,
     this.current,
   });
@@ -31,31 +31,25 @@ class AuthorWorksRepository extends NovelRepository {
     int page = 1,
     bool refresh = false,
   }) async {
-    if (localOnly) {
-      final local = source is OfflineNovelRepository
-          ? (source as OfflineNovelRepository).local?.books ?? const <Novel>[]
-          : const <Novel>[];
-      return NovelPage.fromItems(
-        local.where((b) => sameNovelAuthor(b.author, author)).toList(),
-        page,
-      );
-    }
-    if (tagSearch && source is ProgressiveTagCatalogue) {
-      return (source as ProgressiveTagCatalogue).tagPage(
-        author,
-        page: page,
-        refresh: refresh,
-        current: current,
-      );
-    }
-    return tagSearch
-        ? source.searchFilteredPage(
-            author,
-            field: BookSearchField.tags,
-            page: page,
-            refresh: refresh,
+    final local = source is OfflineNovelRepository
+        ? (source as OfflineNovelRepository).local?.books ?? const <Novel>[]
+        : const <Novel>[];
+    final pattern = BookSearch(author, field: BookSearchField.tags);
+    return NovelPage.fromItems(
+      local
+          .where(
+            (book) => tagSearch
+                ? pattern.matches(
+                    title: book.title,
+                    author: book.author,
+                    tags: book.genre,
+                    id: '${book.id}',
+                  )
+                : sameNovelAuthor(book.author, author),
           )
-        : source.authorPage(author, page: page, refresh: refresh);
+          .toList(),
+      page,
+    );
   }
 
   @override
@@ -79,7 +73,7 @@ class AuthorWorksPage extends StatefulWidget {
     required this.author,
     required this.repository,
     required this.state,
-    this.localOnly = false,
+    this.localOnly = true,
     this.tagSearch = false,
   });
   final String author;
@@ -94,7 +88,14 @@ class AuthorWorksPage extends StatefulWidget {
 class _AuthorWorksPageState extends State<AuthorWorksPage> {
   late final _feed = NovelFeedController(
     widget.tagSearch
-        ? widget.repository
+        ? LibrarySearchRepository(
+            source: widget.repository,
+            state: widget.state,
+            local: widget.repository is OfflineNovelRepository
+                ? (widget.repository as OfflineNovelRepository).local
+                : null,
+            localOnly: true,
+          )
         : AuthorWorksRepository(
             widget.repository,
             widget.author,
@@ -110,7 +111,7 @@ class _AuthorWorksPageState extends State<AuthorWorksPage> {
       _feed.query = widget.author;
       _feed.searchField = BookSearchField.tags;
     }
-    if (!widget.localOnly) {
+    if (widget.tagSearch) {
       widget.state.blockedTagsChanges.addListener(_blockedTagsChanged);
       _blockedTagsChanged();
     }
@@ -121,7 +122,7 @@ class _AuthorWorksPageState extends State<AuthorWorksPage> {
 
   @override
   void dispose() {
-    if (!widget.localOnly) {
+    if (widget.tagSearch) {
       widget.state.blockedTagsChanges.removeListener(_blockedTagsChanged);
     }
     _feed.dispose();
@@ -131,11 +132,7 @@ class _AuthorWorksPageState extends State<AuthorWorksPage> {
   @override
   Widget build(BuildContext context) => ArchiveFeaturePage(
     title: widget.tagSearch ? '标签书单' : '作者作品',
-    code: widget.tagSearch
-        ? 'TAGS / CATALOGUE'
-        : widget.localOnly
-        ? 'AUTHOR / LOCAL WORKS'
-        : 'AUTHOR / WORKS',
+    code: widget.tagSearch ? 'TAGS / CATALOGUE' : 'AUTHOR / LOCAL WORKS',
     child: AnimatedBuilder(
       animation: _feed,
       builder: (context, _) {
@@ -148,7 +145,7 @@ class _AuthorWorksPageState extends State<AuthorWorksPage> {
             secondaryAction: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                if (!widget.localOnly)
+                if (widget.tagSearch)
                   BlockedTagsButton(state: widget.state, feed: _feed),
               ],
             ),
@@ -205,7 +202,7 @@ class _AuthorWorksPageState extends State<AuthorWorksPage> {
                                     ? '已显示 ${_feed.items.length} 部作品'
                                     : '${_feed.totalItems} 部作品'),
                           ),
-                          if (!widget.localOnly)
+                          if (widget.tagSearch)
                             BlockedTagsButton(
                               key: const ValueKey(
                                 'related-blocked-tags-manage',

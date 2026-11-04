@@ -162,20 +162,9 @@ class HomeShellState extends State<HomeShell> with TickerProviderStateMixin {
     GlassDockItem(CupertinoIcons.folder, '本地'),
     GlassDockItem(CupertinoIcons.person_crop_circle, '我的'),
   ];
-  late final _searchFeed = NovelFeedController(widget.repository, search: true)
-    ..searchField = BookSearchField.title;
   LocalBookStore? get _localBooks => widget.repository is OfflineNovelRepository
       ? (widget.repository as OfflineNovelRepository).local
       : null;
-  late final _shelfSearch = NovelFeedController(
-    LibrarySearchRepository(
-      source: widget.repository,
-      state: widget.state,
-      local: _localBooks,
-      cachedOnly: () => _navigation.readableShelfOnly,
-    ),
-    search: true,
-  )..searchField = BookSearchField.title;
   late final _localSearch = NovelFeedController(
     LibrarySearchRepository(
       source: widget.repository,
@@ -185,12 +174,7 @@ class HomeShellState extends State<HomeShell> with TickerProviderStateMixin {
     ),
     search: true,
   )..searchField = BookSearchField.title;
-  int _searchScope = 0;
-  NovelFeedController get _activeSearch => switch (_searchScope) {
-    1 => _shelfSearch,
-    2 => _localSearch,
-    _ => _searchFeed,
-  };
+  NovelFeedController get _activeSearch => _localSearch;
   final _localLibrary = LocalLibraryController();
   List<Widget> _pageWidgets = const [];
   List<WidgetBuilder> _headers = const [];
@@ -206,9 +190,7 @@ class HomeShellState extends State<HomeShell> with TickerProviderStateMixin {
     debugLabel: 'inline-search',
     canRequestFocus: false,
   );
-  bool _searchStarted = false;
   bool? _routeCurrent;
-  String _lastRecordedSearch = '';
   late final AnimationController _searchExpansion =
       AnimationController(
         vsync: this,
@@ -237,11 +219,7 @@ class HomeShellState extends State<HomeShell> with TickerProviderStateMixin {
     _visibleTabs = _navigation.tabs;
     _tab = _navigation.destination(widget.state.startPage.index);
     _visitedTabs.add(_tab);
-    _navigation.addListener(_navigationChanged);
     _searchText.addListener(_searchEdited);
-    _searchFeed.addListener(_searchSucceeded);
-    widget.state.blockedTagsChanges.addListener(_blockedTagsChanged);
-    _blockedTagsChanged();
     if (widget.repository case final OfflineNovelRepository offline) {
       unawaited(offline.loadCache().catchError((Object _) {}));
     }
@@ -311,39 +289,15 @@ class HomeShellState extends State<HomeShell> with TickerProviderStateMixin {
             .toList(growable: false);
   }
 
-  void _blockedTagsChanged() {
-    _searchFeed.setBlockedTags(widget.state.blockedTags);
-  }
-
-  void _navigationChanged() {
-    if (!mounted) return;
-    final tabs = _navigation.tabs;
-    final next = _navigation.destination(_tab);
-    if (_searchOpen && !tabs.contains(_searchScope)) _closeSearch();
-    setState(() {
-      _visibleTabs = tabs;
-    });
-    if (next != _tab) _selectTab(next);
-    if (_searchOpen && _searchScope == 1) {
-      _shelfSearch.refresh();
-    }
-  }
-
   void _routeChanged(ModalRoute<dynamic>? route) {
     final current = route?.isCurrent;
     // An obscured route can pause its expansion ticker until it returns.
     // Returning must not resume an old request to open the keyboard.
     if (current == false) {
       _searchFocusPending = false;
-    } else if (current == true &&
-        _routeCurrent == false &&
-        _searchOpen &&
-        _searchScope != 0) {
+    } else if (current == true && _routeCurrent == false && _searchOpen) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted &&
-            _searchOpen &&
-            _searchScope != 0 &&
-            _routeCurrent == true) {
+        if (mounted && _searchOpen && _routeCurrent == true) {
           _activeSearch.refresh();
         }
       });
@@ -353,15 +307,11 @@ class HomeShellState extends State<HomeShell> with TickerProviderStateMixin {
 
   @override
   void dispose() {
-    widget.state.blockedTagsChanges.removeListener(_blockedTagsChanged);
-    _navigation.removeListener(_navigationChanged);
     _navigation.dispose();
     _pageTransition.dispose();
     _searchExpansion.dispose();
     _searchText.dispose();
     _searchFocus.dispose();
-    _searchFeed.dispose();
-    _shelfSearch.dispose();
     _localSearch.dispose();
     _localLibrary.dispose();
     for (final scroll in _tabScrolls) {
@@ -376,20 +326,13 @@ class HomeShellState extends State<HomeShell> with TickerProviderStateMixin {
 
   void _openSearch() {
     _searchFocus.canRequestFocus = true;
-    _searchScope = _tab;
     final feed = _activeSearch;
     _searchText.value = TextEditingValue(
       text: feed.query,
       selection: TextSelection.collapsed(offset: feed.query.length),
     );
     _searchFocusPending = true;
-    if (_searchScope != 0) {
-      feed.refresh();
-    } else if (!_searchStarted ||
-        (_searchFeed.page == 0 && !_searchFeed.loading)) {
-      _searchStarted = true;
-      _searchFeed.loadInitial();
-    }
+    feed.refresh();
     setState(() {
       _searchOpen = true;
       _searchMounted = true;
@@ -442,33 +385,6 @@ class HomeShellState extends State<HomeShell> with TickerProviderStateMixin {
       return;
     }
     _activeSearch.scheduleSearch(_searchText.text);
-  }
-
-  void _searchSucceeded() {
-    if (_searchScope != 0 ||
-        _searchFeed.loading ||
-        _searchFeed.error != null ||
-        _searchFeed.page < 1) {
-      return;
-    }
-    final query = _searchFeed.query.trim();
-    if (query == _lastRecordedSearch) return;
-    _lastRecordedSearch = query;
-    unawaited(
-      widget.state.recordSearch(query).catchError((Object _) {
-        if (_lastRecordedSearch == query) _lastRecordedSearch = '';
-        if (mounted) showNovelFeedback(context, '最近搜索保存失败');
-      }),
-    );
-  }
-
-  void _recallSearch(String query) {
-    _searchText.value = TextEditingValue(
-      text: query,
-      selection: TextSelection.collapsed(offset: query.length),
-    );
-    _searchFeed.searchFor(query);
-    _dismissSearchKeyboard();
   }
 
   void _scrollTabToTop(int index) {
@@ -610,21 +526,7 @@ class HomeShellState extends State<HomeShell> with TickerProviderStateMixin {
                                   state: widget.state,
                                   repository: widget.repository,
                                   onOpenBook: _dismissSearchKeyboard,
-                                  allowBlockedTags: _searchScope == 0,
-                                  showSources:
-                                      _searchScope == 1 &&
-                                      widget.state.combinedShelf,
-                                  fromCache:
-                                      _searchScope == 1 &&
-                                      _navigation.readableShelfOnly,
-                                  onRecall: _searchScope == 0
-                                      ? _recallSearch
-                                      : null,
-                                  emptyQueryTitle: switch (_searchScope) {
-                                    1 => '书架中的书籍',
-                                    2 => '本地书籍',
-                                    _ => '你可能会喜欢',
-                                  },
+                                  emptyQueryTitle: '本地书籍',
                                 ),
                               ),
                             ),
@@ -811,17 +713,8 @@ class HomeShellState extends State<HomeShell> with TickerProviderStateMixin {
                 child: Align(
                   alignment: Alignment.centerLeft,
                   child: ArchiveMasthead(
-                    title: switch (_searchScope) {
-                      1 => '书架',
-                      2 => '本地',
-                      _ => '轻小说文库',
-                    },
-                    code: switch (_searchScope) {
-                      1 => '02 / PERSONAL ARCHIVE',
-                      2 => '03 / LOCAL ARCHIVE',
-                      _ => 'WENKU8 / READING ARCHIVE',
-                    },
-                    brand: _searchScope == 0,
+                    title: '本地',
+                    code: '03 / LOCAL ARCHIVE',
                   ),
                 ),
               ),
@@ -3204,7 +3097,7 @@ class InlineSearchResults extends StatelessWidget {
     required this.feed,
     required this.onOpenBook,
     this.onRecall,
-    this.emptyQueryTitle = '你可能会喜欢',
+    this.emptyQueryTitle = '本地书籍',
     this.showSources = false,
     this.fromCache = false,
     this.allowBlockedTags = false,
@@ -3395,39 +3288,6 @@ class InlineSearchResults extends StatelessWidget {
 
   Widget _buildResults(BuildContext context) {
     final books = feed.items;
-    if (books.isEmpty &&
-        feed.query.isEmpty &&
-        onRecall != null &&
-        state.recentSearches.isNotEmpty) {
-      return ListView(
-        padding: EdgeInsets.fromLTRB(
-          24,
-          MediaQuery.paddingOf(context).top + FrostedHeader.toolbarHeight + 20,
-          24,
-          24,
-        ),
-        children: [
-          RecentSearches(state: state, onRecall: onRecall!),
-          if (feed.loading && !feed.hasLoaded)
-            const Padding(
-              padding: EdgeInsets.only(top: 24),
-              child: BookCollectionSkeleton(rows: 2),
-            )
-          else if (feed.error != null)
-            Column(
-              children: [
-                const AppText('推荐载入失败，仍可搜索书名或作者'),
-                GlassTextButton(
-                  onPressed: feed.retry,
-                  child: const AppText('重试'),
-                ),
-              ],
-            )
-          else
-            const AppText('搜索书名或作者，开始寻找故事。'),
-        ],
-      );
-    }
     if (books.isEmpty && feed.loading && !feed.hasLoaded) {
       return SearchSkeleton(status: feed.tagProgressLabel);
     }
@@ -4366,7 +4226,7 @@ class _DetailPageState extends State<DetailPage> with TickerProviderStateMixin {
                       author: novel.author,
                       repository: repository,
                       state: state,
-                      localOnly: isLocalBook(novel.id),
+                      localOnly: true,
                     ),
                     reduceMotion: _reduceMotion,
                     explorationKey: (

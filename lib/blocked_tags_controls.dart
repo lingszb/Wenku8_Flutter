@@ -1,7 +1,7 @@
 import 'package:flutter/widgets.dart';
 
 import 'app_ui.dart';
-import 'discovery_filters.dart';
+import 'blocked_tags_editor.dart';
 import 'library_state.dart';
 import 'novel_feed_controller.dart';
 
@@ -13,13 +13,10 @@ Future<void> showBlockedTagsSettings(
   context: context,
   reduceMotion: state.reduceMotion,
   heightFactor: .75,
-  builder: (_) => DiscoveryFilters(
-    sort: feed.sort,
+  builder: (_) => BlockedTagsEditor(
     books: feed.allItems,
-    selectedTags: feed.tags.toSet(),
     availableTags: feed.tagSuggestions,
     blockedTags: state.blockedTags,
-    editingBlockedTags: true,
     onBlockedTagsChanged: (tags) async {
       await state.setBlockedTags(tags);
       feed.setBlockedTags(state.blockedTags);

@@ -397,6 +397,7 @@ lib/automatic_illustrations.dart
 lib/backup_page.dart
 lib/blocked_tags.dart
 lib/blocked_tags_controls.dart
+lib/blocked_tags_editor.dart
 lib/book_categories.dart
 lib/book_collection_grid.dart
 lib/book_collection_layout.dart
@@ -438,7 +439,6 @@ lib/dictionary_sheet.dart
 lib/dictionary_stardict.dart
 lib/dictionary_store.dart
 lib/dictionary_validation.dart
-lib/discovery_filters.dart
 lib/discovery_shelf_query.dart
 lib/dock_layout.dart
 lib/easy_glass.dart
