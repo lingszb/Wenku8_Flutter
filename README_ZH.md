@@ -1,5 +1,7 @@
 # 轻小说文库 · Wenku8 Flutter
 
+> **当前 fork 为本地阅读版本：** 已移除文库发现、账号、文库云书架、社区、站点下载与在线阅读，当前优先 Android。本地 TXT/EPUB 导入与阅读保留，独立云盘、听书及更新能力保留。详见[当前构建范围](docs/SOURCE_BUILD.md)。下方保留上游原项目介绍。
+
 <p>
   <a href="README.md" title="Read in English"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/images/language-en-inactive-dark.svg" /><img src="docs/images/language-en-inactive-light.svg" width="124" height="36" alt="English" /></picture></a><a href="README_ZH.md" title="简体中文 · 当前语言"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/images/language-zh-active-dark.svg" /><img src="docs/images/language-zh-active-light.svg" width="124" height="36" alt="简体中文（当前语言）" /></picture></a>
 </p>

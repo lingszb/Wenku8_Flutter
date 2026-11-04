@@ -259,6 +259,7 @@ docs/READING_WIDGETS.md
 docs/RELEASING.md
 docs/SEARCH.md
 docs/SOURCE_BUILD.md
+docs/LOCAL_READER_REMOVAL.md
 docs/THIRD_PARTY.md
 docs/TOUCH_FINGERPRINT.md
 docs/images/discovery.png

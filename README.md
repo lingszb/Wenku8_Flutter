@@ -1,5 +1,7 @@
 # Light Novel Library · Wenku8 Flutter
 
+> **Local-reader fork:** This checkout removes Wenku website discovery, accounts, cloud shelves, community, downloads and online reading. Android is the current target. Local TXT/EPUB import and reading remain available; independent cloud storage, TTS and updates remain. See [current build scope](docs/SOURCE_BUILD.md). The upstream introduction below describes the original project.
+
 <p>
   <a href="README.md" title="English · Current language"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/images/language-en-active-dark.svg" /><img src="docs/images/language-en-active-light.svg" width="124" height="36" alt="English (current language)" /></picture></a><a href="README_ZH.md" title="切换到简体中文"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/images/language-zh-inactive-dark.svg" /><img src="docs/images/language-zh-inactive-light.svg" width="124" height="36" alt="简体中文" /></picture></a>
 </p>
