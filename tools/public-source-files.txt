@@ -550,7 +550,6 @@ lib/novel_feed_controller.dart
 lib/offline_cache.dart
 lib/offline_repository.dart
 lib/offline_widgets.dart
-lib/online_book_handoff.dart
 lib/online_component.dart
 lib/pages.dart
 lib/palette_image.dart
