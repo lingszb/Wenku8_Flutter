@@ -125,7 +125,7 @@ import 'feature_pages.dart';
 import 'wenku_features.dart';
 import 'legacy_import_page.dart';
 import 'legacy_transport.dart';
-import 'review_pages.dart';
+import 'book_share_action.dart';
 
 export 'app_ui.dart' show sectionHeader;
 
@@ -4677,24 +4677,17 @@ class _DetailPageState extends State<DetailPage> with TickerProviderStateMixin {
                                           )
                                         : const SizedBox.shrink(),
                                   ),
-                                  if (!isLocalBook(novel.id) &&
-                                      WenkuFeaturesScope.maybeOf(context) !=
-                                          null)
-                                    Padding(
-                                      padding: const EdgeInsets.only(top: 24),
-                                      child: RevealFromTop(
-                                        animation: _contentIntro,
-                                        start: .34,
-                                        placeholder: const LoadingSkeleton(
-                                          layout: SkeletonLayout.actions,
-                                        ),
-                                        child: BookCommunityActions(
-                                          novel: novel,
-                                          state: state,
-                                          repository: repository,
-                                        ),
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 24),
+                                    child: RevealFromTop(
+                                      animation: _contentIntro,
+                                      start: .34,
+                                      placeholder: const LoadingSkeleton(
+                                        layout: SkeletonLayout.actions,
                                       ),
+                                      child: BookShareAction(novel: novel),
                                     ),
+                                  ),
                                   Padding(
                                     padding: const EdgeInsets.only(top: 30),
                                     child: RevealFromTop(

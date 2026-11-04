@@ -411,6 +411,7 @@ lib/book_import_limits.dart
 lib/book_navigation.dart
 lib/book_open_monitor.dart
 lib/book_search.dart
+lib/book_share_action.dart
 lib/book_shelf_content_preferences.dart
 lib/book_shelf_content_projection.dart
 lib/book_shelf_preferences.dart
@@ -658,9 +659,6 @@ lib/reading_widget_skin.dart
 lib/reading_widget_skin_picker.dart
 lib/reading_widget_snapshot.dart
 lib/recent_searches.dart
-lib/review_content.dart
-lib/review_markup.dart
-lib/review_pages.dart
 lib/route_identity.dart
 lib/s3_book_documents.dart
 lib/scroll_edge_blur.dart
@@ -681,7 +679,6 @@ lib/user_fonts.dart
 lib/web_publication_catalog.dart
 lib/wenku_account.dart
 lib/wenku_features.dart
-lib/wenku_reviews.dart
 lib/wenku_shelf_sync.dart
 ohos/.gitignore
 ohos/AppScope/app.json5
