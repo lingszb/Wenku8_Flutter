@@ -33,8 +33,6 @@ import 'updates/app_updates.dart';
 import 'updates/ios_update_platform.dart';
 import 'updates/harmony_update_platform.dart';
 import 'updates/update_page.dart';
-import 'wenku_account.dart';
-import 'wenku_features.dart';
 import 'lan_reading_sync.dart';
 import 'reader_handoff_navigation.dart';
 import 'reader_appearance.dart';
@@ -76,9 +74,6 @@ Future<void> main() async {
       WidgetsBinding.instance.platformDispatcher.platformBrightness,
   };
   SystemChrome.setSystemUIOverlayStyle(novelSystemUiStyle(brightness));
-  final WenkuAccount? account = LocalPlatform.fileActions
-      ? WenkuAccount()
-      : null;
   const remote = LegacyWenkuRepository();
   final repository = LocalPlatform.fileActions
       ? await openApplicationLibrary(remote: remote, network: network)
@@ -90,7 +85,6 @@ Future<void> main() async {
   if (repository is OfflineNovelRepository && repository.local != null) {
     await reconcileLocalSeries(repository.local!, state);
   }
-  final features = account != null ? WenkuFeatures(account: account) : null;
   final customSpeech = LocalPlatform.listening ? CustomSpeechSettings() : null;
   await customSpeech?.load();
   final listening = LocalPlatform.listening
@@ -109,7 +103,6 @@ Future<void> main() async {
     NovelApp(
       state: state,
       repository: repository,
-      features: features,
       listening: listening,
       network: network,
       updates: defaultTargetPlatform == TargetPlatform.android
@@ -136,7 +129,6 @@ Future<void> main() async {
     // frame. A service-created engine also gets a handler, with no auto-play.
     unawaited(prepareListeningService(listening).catchError((Object _) {}));
   }
-  if (features != null) unawaited(features.account.initialize());
 }
 
 class NovelApp extends StatefulWidget {
@@ -144,7 +136,6 @@ class NovelApp extends StatefulWidget {
     super.key,
     required this.state,
     required this.repository,
-    this.features,
     this.listening,
     this.updates,
     this.network,
@@ -152,7 +143,6 @@ class NovelApp extends StatefulWidget {
 
   final LibraryState state;
   final NovelRepository repository;
-  final WenkuFeatures? features;
   final ListeningController? listening;
   final AppUpdates? updates;
   final NetworkStatus? network;
@@ -163,7 +153,6 @@ class NovelApp extends StatefulWidget {
 class _NovelAppState extends State<NovelApp> with WidgetsBindingObserver {
   LibraryState get state => widget.state;
   NovelRepository get repository => widget.repository;
-  WenkuFeatures? get features => widget.features;
   ListeningController? get listening => widget.listening;
   AppUpdates? get updates => widget.updates;
   final _updateNavigation = AppUpdateNavigation();
@@ -703,17 +692,14 @@ class _NovelAppState extends State<NovelApp> with WidgetsBindingObserver {
                             controller: listening,
                             child: LanSyncScope(
                               sync: _lanSync,
-                              child: WenkuFeaturesScope(
-                                features: features,
-                                child: ReaderHandoffScope(
-                                  navigation: _readerHandoff,
-                                  child: LanHandoffMonitor(
-                                    handoff: _lanSync?.handoff,
-                                    onContinue: _continueNearbyBook,
-                                    reduceMotion: state.effectiveReduceMotion,
-                                    noticeWrapper: _nearbyNotice,
-                                    child: child!,
-                                  ),
+                              child: ReaderHandoffScope(
+                                navigation: _readerHandoff,
+                                child: LanHandoffMonitor(
+                                  handoff: _lanSync?.handoff,
+                                  onContinue: _continueNearbyBook,
+                                  reduceMotion: state.effectiveReduceMotion,
+                                  noticeWrapper: _nearbyNotice,
+                                  child: child!,
                                 ),
                               ),
                             ),
