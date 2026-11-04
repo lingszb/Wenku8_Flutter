@@ -3,54 +3,15 @@ import 'package:flutter/foundation.dart';
 import 'library_state.dart';
 import 'network_status.dart';
 
-/// Stable page identities: changing dock membership never renumbers the pages
-/// or disposes their reading/search/scroll state.
+/// Retain page identities used by existing preferences and reader navigation.
 class HomeNavigation extends ChangeNotifier {
-  HomeNavigation(this.preferences, this.network) {
-    preferences.navigationChanges.addListener(_changed);
-    network?.addListener(_changed);
-    _value = _read();
-  }
+  HomeNavigation(LibraryState preferences, NetworkStatus? network);
 
-  final LibraryState preferences;
-  final NetworkStatus? network;
-  late ({bool localReader, bool cachedShelf, bool combinedShelf}) _value;
+  bool get cachedShelf => true;
+  bool get localReader => true;
+  bool get combinedShelf => false;
+  bool get readableShelfOnly => true;
+  List<int> get tabs => const [2, 3];
 
-  ({bool localReader, bool cachedShelf, bool combinedShelf}) _read() => (
-    localReader: preferences.localReaderMode,
-    cachedShelf: preferences.adaptWhenOffline && (network?.offline ?? false),
-    combinedShelf: preferences.combinedShelf,
-  );
-
-  bool get cachedShelf => _value.cachedShelf;
-  bool get localReader => _value.localReader;
-  bool get combinedShelf => _value.combinedShelf;
-  bool get readableShelfOnly => cachedShelf || localReader;
-  List<int> get tabs {
-    if (localReader) return combinedShelf ? const [1, 3] : const [2, 3];
-    if (combinedShelf) return cachedShelf ? const [1, 3] : const [0, 1, 3];
-    return cachedShelf ? const [1, 2, 3] : const [0, 1, 2, 3];
-  }
-
-  int destination(int current) => tabs.contains(current)
-      ? current
-      : localReader
-      ? combinedShelf
-            ? 1
-            : 2
-      : 1;
-
-  void _changed() {
-    final next = _read();
-    if (next == _value) return;
-    _value = next;
-    notifyListeners();
-  }
-
-  @override
-  void dispose() {
-    preferences.navigationChanges.removeListener(_changed);
-    network?.removeListener(_changed);
-    super.dispose();
-  }
+  int destination(int current) => tabs.contains(current) ? current : 2;
 }

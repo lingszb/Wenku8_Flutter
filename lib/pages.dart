@@ -88,7 +88,6 @@ import 'reader_content.dart';
 import 'reader_chapter_heading.dart';
 import 'reader_rich_content.dart';
 import 'reader_scroll_stream.dart';
-import 'discovery_filters.dart';
 import 'dock_layout.dart';
 import 'reader_follow_scroll.dart';
 import 'reader_listening_follow.dart';
@@ -152,7 +151,6 @@ class HomeShellState extends State<HomeShell> with TickerProviderStateMixin {
   late final _navigation = HomeNavigation(widget.state, widget.network);
   late List<int> _visibleTabs;
   final _visitedTabs = <int>{};
-  bool _catalogStarted = false;
   static final _scrollPlatforms = TargetPlatform.values.toSet();
   late final _tabScrolls = [
     for (var i = 0; i < _dockItems.length; i++)
@@ -160,15 +158,11 @@ class HomeShellState extends State<HomeShell> with TickerProviderStateMixin {
   ];
   final _searchScroll = ScrollController(debugLabel: 'home-search');
   static const _dockItems = [
-    GlassDockItem(CupertinoIcons.house, '发现'),
+    GlassDockItem(CupertinoIcons.folder, '本地'),
     GlassDockItem(CupertinoIcons.book, '书架', symbol: ArchiveSymbol.shelf),
     GlassDockItem(CupertinoIcons.folder, '本地'),
     GlassDockItem(CupertinoIcons.person_crop_circle, '我的'),
   ];
-  late final _catalog = NovelFeedController(
-    widget.repository,
-    initialItems: 60,
-  );
   late final _searchFeed = NovelFeedController(widget.repository, search: true)
     ..searchField = BookSearchField.title;
   LocalBookStore? get _localBooks => widget.repository is OfflineNovelRepository
@@ -252,15 +246,6 @@ class HomeShellState extends State<HomeShell> with TickerProviderStateMixin {
     if (widget.repository case final OfflineNovelRepository offline) {
       unawaited(offline.loadCache().catchError((Object _) {}));
     }
-    final discover = DiscoverPage(
-      books: const [],
-      feed: _catalog,
-      state: widget.state,
-      repository: widget.repository,
-      showHeader: false,
-      compactMainPageControls: true,
-      onSearch: _openSearch,
-    );
     final shelf = ShelfPage(
       books: const [],
       state: widget.state,
@@ -304,7 +289,7 @@ class HomeShellState extends State<HomeShell> with TickerProviderStateMixin {
             ),
           );
     _headers = [
-      discover.buildHeader,
+      (_) => const SizedBox.shrink(),
       shelf.buildHeader,
       localPage?.buildHeader ??
           (_) => const ArchiveMasthead(title: '本地', code: '03 / LOCAL ARCHIVE'),
@@ -312,7 +297,7 @@ class HomeShellState extends State<HomeShell> with TickerProviderStateMixin {
     ];
     _pageWidgets =
         [
-              discover,
+              const SizedBox.shrink(),
               shelf,
               localPage ?? const Center(child: AppText('当前演示数据源未启用本地书库')),
               settings,
@@ -325,21 +310,9 @@ class HomeShellState extends State<HomeShell> with TickerProviderStateMixin {
               ),
             )
             .toList(growable: false);
-    _ensureCatalog();
-  }
-
-  void _ensureCatalog() {
-    if (_tab != 0 || !_visibleTabs.contains(0)) return;
-    if (!_catalogStarted) {
-      _catalogStarted = true;
-      _catalog.loadInitial();
-    } else if (_catalog.items.isEmpty && _catalog.error != null) {
-      _catalog.retry();
-    }
   }
 
   void _blockedTagsChanged() {
-    _catalog.setBlockedTags(widget.state.blockedTags);
     _searchFeed.setBlockedTags(widget.state.blockedTags);
   }
 
@@ -355,7 +328,6 @@ class HomeShellState extends State<HomeShell> with TickerProviderStateMixin {
     if (_searchOpen && _searchScope == 1) {
       _shelfSearch.refresh();
     }
-    _ensureCatalog();
   }
 
   void _routeChanged(ModalRoute<dynamic>? route) {
@@ -389,7 +361,6 @@ class HomeShellState extends State<HomeShell> with TickerProviderStateMixin {
     _searchExpansion.dispose();
     _searchText.dispose();
     _searchFocus.dispose();
-    _catalog.dispose();
     _searchFeed.dispose();
     _shelfSearch.dispose();
     _localSearch.dispose();
@@ -537,7 +508,6 @@ class HomeShellState extends State<HomeShell> with TickerProviderStateMixin {
       _tab = index;
       _visitedTabs.add(index);
     });
-    _ensureCatalog();
   }
 
   Widget _tabPlane(int index) {
@@ -987,418 +957,6 @@ class _HomeRouteBindingState extends State<_HomeRouteBinding> {
   @override
   Widget build(BuildContext context) =>
       RouteIdentity(route: _route, child: widget.child);
-}
-
-class DiscoverPage extends StatelessWidget {
-  const DiscoverPage({
-    super.key,
-    required this.books,
-    required this.state,
-    required this.repository,
-    required this.onSearch,
-    this.showHeader = true,
-    this.compactMainPageControls = false,
-    this.feed,
-    this.categoryTitle,
-    this.onChooseCategory,
-  });
-  final List<Novel> books;
-  final LibraryState state;
-  final NovelRepository repository;
-  final VoidCallback onSearch;
-  final bool showHeader;
-  final bool compactMainPageControls;
-  final NovelFeedController? feed;
-  final String? categoryTitle;
-  final void Function(BuildContext context)? onChooseCategory;
-
-  Widget buildHeader(BuildContext context) => Row(
-    children: [
-      Expanded(
-        child: const ArchiveMasthead(
-          title: '轻小说文库',
-          code: 'WENKU8 / READING ARCHIVE',
-          brand: true,
-        ),
-      ),
-      GlassIconButton(
-        icon: CupertinoIcons.search,
-        label: '搜索',
-        onPressed: onSearch,
-      ),
-    ],
-  );
-
-  @override
-  Widget build(BuildContext context) => ActiveListenableBuilder(
-    listenable: Listenable.merge([state.discoveryViewChanges, ?feed]),
-    builder: (context) => LoadedContentSequence(
-      generation: feed?.resultReplacesRetained == true
-          ? null
-          : feed?.resultRevision,
-      firstIndex: (feed?.resultStartIndex ?? 0) == 0
-          ? 0
-          : feed!.resultStartIndex + 2,
-      child: _buildContent(context, feed?.items ?? books),
-    ),
-  );
-
-  Widget _buildContent(BuildContext context, List<Novel> books) {
-    final mode = state.discoveryViewMode;
-    final grid = mode.isGrid;
-    // Discovery deliberately has one source for both the featured shelf and
-    // index. Legacy independent preferences remain stored but are not consumed.
-    final featured = books;
-    final featuredCount = mode.hasShelf
-        ? state.discoveryShelfPreferences.featuredCount(books.length)
-        : 0;
-    final rowOffset = featuredCount;
-    final blockedAll = books.isEmpty && (feed?.blockedItemCount ?? 0) > 0;
-    final returnToLatest =
-        feed != null &&
-            (feed!.tags.isNotEmpty || feed!.sort != NovelSort.lastUpdate)
-        ? GlassTextButton(
-            key: const ValueKey('discover-return-to-latest'),
-            onPressed: () => feed!.selectSort(NovelSort.lastUpdate),
-            child: const AppText('返回最近更新'),
-          )
-        : null;
-    Widget body;
-    if (books.isEmpty &&
-        featuredCount == 0 &&
-        feed?.loading == true &&
-        feed?.hasLoaded != true) {
-      body = LibrarySkeleton(
-        featured: mode.hasShelf,
-        grid: grid,
-        gridDensity: state.discoveryGridDensity,
-        header: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _categoryHeader(context),
-            if (feed?.tagProgressLabel case final progress?) ...[
-              const SizedBox(height: 12),
-              AppText(progress, style: const TextStyle(fontSize: 13)),
-            ],
-            if (returnToLatest != null) ...[
-              const SizedBox(height: 8),
-              returnToLatest,
-            ],
-          ],
-        ),
-      );
-    } else if (books.isEmpty && featuredCount == 0 && feed?.error != null) {
-      body = Column(
-        children: [
-          Padding(
-            padding: EdgeInsets.fromLTRB(
-              24,
-              MediaQuery.paddingOf(context).top +
-                  FrostedHeader.toolbarHeight +
-                  20,
-              24,
-              0,
-            ),
-            child: _categoryHeader(context),
-          ),
-          Expanded(
-            child: ContentNotice(
-              icon: CupertinoIcons.wifi_exclamationmark,
-              title: '书籍加载失败',
-              message: feed!.failureMessage,
-              onRetry: feed!.retry,
-              secondaryAction: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [?returnToLatest],
-              ),
-            ),
-          ),
-        ],
-      );
-    } else {
-      body = NotificationListener<ScrollNotification>(
-        onNotification: (notification) {
-          if (notification.depth == 0 &&
-              notification.metrics.axis == Axis.vertical &&
-              books.isNotEmpty &&
-              feed?.loading == false &&
-              feed?.hasMore == true &&
-              feed?.error == null &&
-              notification.metrics.extentAfter <
-                  math.max(800, notification.metrics.viewportDimension * 1.5)) {
-            WidgetsBinding.instance.addPostFrameCallback(
-              (_) => feed?.loadMore(),
-            );
-          }
-          return false;
-        },
-        child: KeyedSubtree(
-          key: ValueKey((feed?.sort, feed?.tags.join('|'), mode)),
-          child: CustomScrollView(
-            key: const PageStorageKey('discover'),
-            clipBehavior: LibraryReflowScope.clipOf(context),
-            physics: const AlwaysScrollableScrollPhysics(),
-            cacheExtent: BookCollectionLayout.cacheExtentFor(
-              MediaQuery.sizeOf(context).width - 48,
-              grid: grid,
-            ),
-            slivers: [
-              SliverPadding(
-                padding: EdgeInsets.fromLTRB(
-                  24,
-                  MediaQuery.paddingOf(context).top +
-                      FrostedHeader.toolbarHeight +
-                      20,
-                  24,
-                  0,
-                ),
-                sliver: SliverToBoxAdapter(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _categoryHeader(context),
-                      const SizedBox(height: 14),
-                      if (featuredCount > 0) ...[
-                        ArchiveFileCarousel(
-                          key: ValueKey((
-                            'archive-files',
-                            mode,
-                            featured
-                                .take(featuredCount)
-                                .map((book) => book.id)
-                                .join(','),
-                          )),
-                          books: featured
-                              .take(featuredCount)
-                              .toList(growable: false),
-                          library: state,
-                          repeatFill:
-                              state.discoveryShelfPreferences.repeatFill,
-                          reduceMotion: state.reduceMotion,
-                          animateEntrance: true,
-                          onOpen: (book, tag) => openDetail(
-                            context,
-                            book,
-                            state,
-                            repository,
-                            coverHeroTag: tag,
-                          ),
-                        ),
-                      ],
-                      if (featuredCount > 0 && books.length > rowOffset) ...[
-                        const SizedBox(height: 28),
-                        sectionHeader(context, '更多书籍', ''),
-                        const SizedBox(height: 12),
-                      ],
-                      if (blockedAll)
-                        Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 48),
-                          child: Column(
-                            children: [
-                              const AppText('当前已加载的书籍均被标签屏蔽'),
-                              const SizedBox(height: 8),
-                              BlockedTagsButton(
-                                key: const ValueKey(
-                                  'discover-blocked-tags-manage',
-                                ),
-                                state: state,
-                                feed: feed!,
-                                label: '管理屏蔽标签',
-                              ),
-                              if (feed!.loading)
-                                const AppText('正在加载…')
-                              else if (feed!.hasMore)
-                                GlassTextButton(
-                                  key: const ValueKey(
-                                    'discover-blocked-tags-more',
-                                  ),
-                                  onPressed: feed!.loadMore,
-                                  child: const AppText('继续加载'),
-                                ),
-                            ],
-                          ),
-                        )
-                      else if (books.isEmpty)
-                        Padding(
-                          padding: EdgeInsets.symmetric(vertical: 90),
-                          child: Center(
-                            child: AppText(
-                              feed?.loading == true
-                                  ? '正在加载发现书目…'
-                                  : feed?.error != null
-                                  ? feed!.failureMessage
-                                  : '暂无书籍',
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-              ),
-              SliverPadding(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                sliver: BookCollectionSliver(
-                  grid: grid,
-                  gridDensity: state.discoveryGridDensity,
-                  gridBottomInset: DockLayout.scrollPaddingOf(context),
-                  itemCount: books.length - rowOffset,
-                  itemBuilder: (context, index) {
-                    final book = books[index + rowOffset];
-                    return LoadedContentItem(
-                      key: ValueKey(book.id),
-                      index: index + rowOffset + 2,
-                      placeholder: grid
-                          ? const BookGridSkeleton()
-                          : const BookRowSkeleton(),
-                      child: grid
-                          ? BookGridTile(
-                              book: book,
-                              trailing: const SizedBox.shrink(),
-                              coverHeroTag: CoverHeroTag(context, book.id),
-                              onTap: () => openDetail(
-                                context,
-                                book,
-                                state,
-                                repository,
-                                coverHeroTag: CoverHeroTag(context, book.id),
-                              ),
-                            )
-                          : NovelRow(
-                              novel: book,
-                              coverHeroTag: CoverHeroTag(context, book.id),
-                              onTap: () => openDetail(
-                                context,
-                                book,
-                                state,
-                                repository,
-                                coverHeroTag: CoverHeroTag(context, book.id),
-                              ),
-                            ),
-                    );
-                  },
-                ),
-              ),
-              SliverPadding(
-                padding: EdgeInsets.only(
-                  bottom: DockLayout.scrollPaddingOf(context),
-                ),
-                sliver: SliverToBoxAdapter(
-                  child: feed == null || blockedAll
-                      ? const SizedBox.shrink()
-                      : FeedFooter(
-                          feed: feed!,
-                          grid: grid,
-                          gridDensity: state.discoveryGridDensity,
-                        ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-      if (feed != null) {
-        body = FeedRefresh(feed: feed!, child: body);
-      }
-    }
-    return GlassHeaderLayout(
-      showHeader: showHeader,
-      header: buildHeader(context),
-      body: CompactMainPageControls(
-        enabled: compactMainPageControls,
-        child: body,
-      ),
-    );
-  }
-
-  String get _lowerCategory =>
-      categoryTitle ??
-      (feed?.tags.isNotEmpty == true
-          ? feed!.tags.join(' · ')
-          : feed?.sort.label) ??
-      '最近更新';
-
-  Widget _categoryHeader(BuildContext context, {int? count}) =>
-      BookCollectionRegionToolbar(
-        title: '发现',
-        category: _lowerCategory,
-        count: count ?? (feed?.items ?? books).length,
-        categoryKey: const ValueKey('discover-category'),
-        filterKey: const ValueKey('discover-filter'),
-        viewKey: const ValueKey('discover-view'),
-        onCategory: onChooseCategory != null
-            ? () => onChooseCategory!(context)
-            : feed == null
-            ? null
-            : () => _chooseSort(context),
-        onFilter: onChooseCategory != null
-            ? () => onChooseCategory!(context)
-            : feed == null
-            ? null
-            : () => _chooseSort(context),
-        onView: () => _chooseView(context),
-        loading: feed?.loading == true && feed?.hasLoaded != true,
-      );
-
-  Future<void> _chooseSort(BuildContext context) async {
-    final selected = await showJellySheet<DiscoverySelection>(
-      context: context,
-      reduceMotion: state.reduceMotion,
-      heightFactor: .75,
-      builder: (_) => DiscoveryFilters(
-        sort: feed!.sort,
-        books: feed!.allItems,
-        selectedTags: feed!.tags.toSet(),
-        availableTags: feed!.tagSuggestions,
-        blockedTags: state.blockedTags,
-        onBlockedTagsChanged: (tags) async {
-          await state.setBlockedTags(tags);
-          feed!.setBlockedTags(state.blockedTags);
-        },
-      ),
-    );
-    if (!context.mounted || selected == null) return;
-    if (selected.sort case final sort?) await feed!.selectSort(sort);
-    if (selected.tags case final tags?) await feed!.selectTags(tags);
-  }
-
-  Future<void> _chooseView(BuildContext context) => showJellySheet<void>(
-    context: context,
-    reduceMotion: state.reduceMotion,
-    heightFactor: .82,
-    builder: (_) => AnimatedBuilder(
-      animation: state.discoveryViewChanges,
-      builder: (context, _) => SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
-        child: BookCollectionViewOptions(
-          mode: state.discoveryViewMode,
-          gridDensity: state.discoveryGridDensity,
-          shelfPreferences: state.discoveryShelfPreferences,
-          reduceMotion: state.reduceMotion,
-          onShelfPreferencesChanged: (value) =>
-              _saveView(context, shelfPreferences: value),
-          onModeChanged: (mode) => _saveView(context, mode: mode),
-          onGridDensityChanged: (value) => _saveView(context, density: value),
-        ),
-      ),
-    ),
-  );
-
-  Future<void> _saveView(
-    BuildContext context, {
-    BookCollectionMode? mode,
-    BookGridDensity? density,
-    BookShelfPreferences? shelfPreferences,
-  }) async {
-    try {
-      await state.setDiscoveryView(
-        mode: mode,
-        gridDensity: density,
-        shelfPreferences: shelfPreferences,
-      );
-    } catch (_) {
-      if (context.mounted) showNovelFeedback(context, '视图偏好保存失败，请重试');
-    }
-  }
 }
 
 /// Refresh keeps the resolved view mounted. Only a thin progress line appears
@@ -3008,7 +2566,7 @@ class SettingsPage extends StatelessWidget {
             context,
             id: 'usage',
             title: '使用方式',
-            subtitle: '启动与续读、书架及离线适配',
+            subtitle: '启动与续读',
             code: 'SYSTEM / USAGE',
             icon: CupertinoIcons.square_grid_2x2,
             options: _usageOptions,
@@ -3150,7 +2708,7 @@ class SettingsPage extends StatelessWidget {
                 spacing: 8,
                 runSpacing: 8,
                 children: [
-                  for (final page in ReadingEntry.values)
+                  for (final page in const [ReadingEntry.local])
                     GlassTextButton(
                       key: ValueKey('settings-direct-reading-${page.name}'),
                       selected: state.directReadingOn(page),
@@ -3167,17 +2725,6 @@ class SettingsPage extends StatelessWidget {
               ),
             ),
           const Divider(height: 22),
-          GlassSettingMenu<AppStartPage>(
-            key: const ValueKey('settings-start-page'),
-            icon: CupertinoIcons.house,
-            label: '启动页面',
-            value: state.startPage,
-            options: {for (final page in AppStartPage.values) page: page.label},
-            reduceMotion: state.reduceMotion,
-            onChanged: (page) =>
-                _savePreference(context, () => state.setStartPage(page)),
-          ),
-          const Divider(height: 22),
           _toggleSetting(
             context,
             keyName: 'settings-open-recent-on-launch',
@@ -3186,40 +2733,6 @@ class SettingsPage extends StatelessWidget {
             description: '打开应用后进入最近读过的书',
             value: state.openRecentOnLaunch,
             onChanged: state.setOpenRecentOnLaunch,
-          ),
-          const Divider(height: 22),
-          _toggleSetting(
-            context,
-            keyName: 'settings-combined-shelf',
-            icon: CupertinoIcons.square_stack,
-            title: '合并书架',
-            description: '收藏与本地书统一显示在书架，试读缓存不加入',
-            value: state.combinedShelf,
-            onChanged: (value) => state.setNavigationMode(combinedShelf: value),
-          ),
-          const Divider(height: 22),
-          _toggleSetting(
-            context,
-            keyName: 'settings-adapt-offline',
-            icon: CupertinoIcons.wifi_slash,
-            title: '离线适配',
-            description: state.combinedShelf
-                ? '断网后隐藏发现，书架保留已缓存的收藏和本地书籍'
-                : '断网后隐藏发现，书架只显示已缓存的收藏',
-            value: state.adaptWhenOffline,
-            onChanged: (value) =>
-                state.setNavigationMode(adaptWhenOffline: value),
-          ),
-          const Divider(height: 22),
-          _toggleSetting(
-            context,
-            keyName: 'settings-local-reader-mode',
-            icon: CupertinoIcons.book,
-            title: '阅读器模式',
-            description: state.combinedShelf ? '只显示离线可读的合并书架和我的' : '只显示本地和我的',
-            value: state.localReaderMode,
-            onChanged: (value) =>
-                state.setNavigationMode(localReaderMode: value),
           ),
         ],
       ),
