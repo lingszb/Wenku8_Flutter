@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/foundation.dart';
 
 import 'catalog.dart';
@@ -7,43 +5,24 @@ import 'book_search.dart';
 import 'offline_cache.dart';
 import 'local_books.dart';
 import 'network_status.dart';
-import 'reader_content.dart'
-    show readerHasMissingIllustrations, readerIllustrationUrl;
 import 'ui_notifiers.dart';
 import 'tag_catalogue.dart';
 
-class _ChapterRequest {
-  _ChapterRequest(this.key);
-  final (int, int, CacheEpoch) key;
-  int readers = 0;
-  Future<String>? response;
-}
-
-/// Adds persistent offline reading without changing the remote request contract.
-/// Download notifications are independent of appearance/reader state updates.
+/// Reads imported books and previously stored chapters without website access.
 class OfflineNovelRepository extends FrameChangeNotifier
     implements NovelRepository, ProgressiveTagCatalogue {
-  OfflineNovelRepository({
-    required this.remote,
-    required this.cache,
-    this.local,
-    this.network,
-  }) {
+  OfflineNovelRepository({required this.cache, this.local, this.network}) {
     cache.addListener(_cacheChanged);
     local?.addListener(_cacheChanged);
   }
 
-  final NovelRepository remote;
   final OfflineCacheStore cache;
   final LocalBookStore? local;
   final NetworkStatus? network;
   bool get offline => network?.offline ?? false;
   bool availableOffline(int id) =>
       local?.book(id) != null || (cache.book(id)?.cachedCount ?? 0) > 0;
-  final Map<int, Novel> _known = {};
   final Set<int> _offlineDirectories = {};
-  final Map<(int, int, CacheEpoch), _ChapterRequest> _requests = {};
-  final Set<(int, int, CacheEpoch)> _illustrationRepairs = {};
   final Map<int, FrameChangeNotifier> _bookChanges = {};
   final Map<int, Listenable> _bookObservers = {};
   bool _disposed = false;
@@ -87,21 +66,52 @@ class OfflineNovelRepository extends FrameChangeNotifier
   }
 
   @override
-  Future<List<Novel>> list() => remote.list();
+  Future<List<Novel>> list() async {
+    await cache.load();
+    return <int, Novel>{
+      for (final entry in cache.books)
+        if (entry.cachedCount > 0) entry.novel.id: entry.novel,
+      for (final book in local?.books ?? const <Novel>[]) book.id: book,
+    }.values.toList();
+  }
+
   @override
-  Future<List<Novel>> search(String query) => remote.search(query);
+  Future<List<Novel>> search(String query) async {
+    final pattern = BookSearch(query);
+    return (await list())
+        .where(
+          (book) => pattern.matches(
+            title: book.title,
+            author: book.author,
+            tags: book.genre,
+            summary: book.summary,
+            id: '${book.id}',
+          ),
+        )
+        .toList();
+  }
+
   @override
   Future<NovelPage> browse({
     NovelSort sort = NovelSort.lastUpdate,
     int page = 1,
     bool refresh = false,
-  }) => remote.browse(sort: sort, page: page, refresh: refresh);
+  }) async {
+    final books = await list();
+    return NovelPage.fromItems(
+      sort == NovelSort.fullFlag
+          ? books.where((book) => book.isComplete).toList()
+          : books,
+      page,
+    );
+  }
+
   @override
   Future<NovelPage> searchPage(
     String query, {
     int page = 1,
     bool refresh = false,
-  }) => remote.searchPage(query, page: page, refresh: refresh);
+  }) => searchFilteredPage(query, page: page, refresh: refresh);
 
   @override
   Future<NovelPage> searchFilteredPage(
@@ -110,23 +120,10 @@ class OfflineNovelRepository extends FrameChangeNotifier
     int page = 1,
     bool refresh = false,
   }) async {
-    if (!offline) {
-      return remote.searchFilteredPage(
-        query,
-        field: field,
-        page: page,
-        refresh: refresh,
-      );
-    }
-    await cache.load();
     final pattern = BookSearch(query, field: field);
-    final books = <int, Novel>{
-      for (final entry in cache.books)
-        if (entry.cachedCount > 0) entry.novel.id: entry.novel,
-      for (final book in local?.books ?? const <Novel>[]) book.id: book,
-    };
+    final books = await list();
     return NovelPage.fromItems(
-      books.values
+      books
           .where(
             (book) => pattern.matches(
               title: book.title,
@@ -149,15 +146,6 @@ class OfflineNovelRepository extends FrameChangeNotifier
     bool Function()? current,
     void Function(TagSearchProgress)? onProgress,
   }) {
-    if (!offline && remote is ProgressiveTagCatalogue) {
-      return (remote as ProgressiveTagCatalogue).tagPage(
-        tag,
-        page: page,
-        refresh: refresh,
-        current: current,
-        onProgress: onProgress,
-      );
-    }
     return searchFilteredPage(
       tag,
       field: BookSearchField.tags,
@@ -172,111 +160,21 @@ class OfflineNovelRepository extends FrameChangeNotifier
     int page = 1,
     bool refresh = false,
   }) async {
-    if (!offline) {
-      return remote.authorPage(author, page: page, refresh: refresh);
-    }
-    final books = <int, Novel>{
-      for (final entry in cache.books)
-        if (entry.cachedCount > 0) entry.novel.id: entry.novel,
-      for (final book in local?.books ?? const <Novel>[]) book.id: book,
-    };
+    final books = await list();
     return NovelPage.fromItems(
-      books.values
-          .where((book) => sameNovelAuthor(book.author, author))
-          .toList(),
+      books.where((book) => sameNovelAuthor(book.author, author)).toList(),
       page,
     );
   }
 
   Future<Novel?> cachedBook(int id) async {
     if (isLocalBook(id)) return local?.book(id);
-    final book = cache.book(id)?.novel ?? await cache.readBook(id);
-    if (book != null) _known.putIfAbsent(id, () => book);
-    return book;
-  }
-
-  /// Explicitly refresh old bodies that predate illustration support. A failed
-  /// request keeps the previous offline body; no cache purge is necessary.
-  Future<String> refreshChapterContent(int id, NovelChapter chapter) async {
-    if (isLocalBook(id)) return _localContent(id, chapter);
-    if (offline) throw const FormatException('当前无网络连接，请联网后刷新插图');
-    final epoch = cache.epochFor(id);
-    final request = _retainRequest(id, chapter.id, epoch);
-    try {
-      final previous = await cache.readChapter(id, chapter.id);
-      final text = await _fetch(id, chapter, request);
-      if (previous != null &&
-          readerHasMissingIllustrations(previous) &&
-          !_hasIllustration(text)) {
-        throw const FormatException('暂未获取到本章插图地址，请稍后重试');
-      }
-      await _saveBody(id, chapter.id, text, epoch);
-      return text;
-    } finally {
-      _releaseRequest(request);
-    }
-  }
-
-  static bool _hasIllustration(String text) => text
-      .split('\n\n')
-      .any((paragraph) => readerIllustrationUrl(paragraph) != null);
-
-  Future<void> _saveBody(int id, int cid, String text, CacheEpoch epoch) async {
-    if (_disposed || !cache.isCurrent(id, epoch)) return;
-    try {
-      await cache.saveChapter(id, cid, text, epoch: epoch);
-      cacheError = null;
-    } catch (error) {
-      cacheError = error;
-      _changed(id);
-    }
-  }
-
-  /// Called after the reader has displayed its cached paragraphs, so an offline
-  /// image repair never holds readable text behind a network timeout.
-  Future<String?> repairChapterIllustrations(
-    int id,
-    NovelChapter chapter,
-  ) async {
-    if (chapter.id <= 0 || offline) return null;
-    final epoch = cache.epochFor(id);
-    final request = _retainRequest(id, chapter.id, epoch);
-    try {
-      final saved = await cache.readChapter(id, chapter.id);
-      if (saved == null || !readerHasMissingIllustrations(saved)) return null;
-      if (!_illustrationRepairs.add(request.key) && request.response == null) {
-        return null;
-      }
-      final repaired = await _fetch(id, chapter, request);
-      if (!_hasIllustration(repaired)) return null;
-      await _saveBody(id, chapter.id, repaired, epoch);
-      return repaired;
-    } catch (_) {
-      // Continue reading the existing offline body. A user-initiated refresh
-      // bypasses the attempted-repair set when connectivity returns.
-      return null;
-    } finally {
-      _releaseRequest(request);
-    }
+    await cache.load();
+    return cache.book(id)?.novel ?? await cache.readBook(id);
   }
 
   @override
-  Future<Novel?> find(int id) async {
-    if (isLocalBook(id)) return local?.book(id);
-    if (offline) return cachedBook(id);
-    try {
-      final book = await remote.find(id);
-      if (book != null) {
-        _known[id] = book;
-        return book;
-      }
-    } catch (_) {
-      final saved = await cachedBook(id);
-      if (saved != null) return saved;
-      rethrow;
-    }
-    return cachedBook(id);
-  }
+  Future<Novel?> find(int id) => cachedBook(id);
 
   @override
   Future<Novel> detail(Novel novel) async {
@@ -292,16 +190,8 @@ class OfflineNovelRepository extends FrameChangeNotifier
         return local!.book(novel.id)!;
       }
     }
-    if (offline) return await cachedBook(novel.id) ?? novel;
-    try {
-      final loaded = await remote.detail(novel);
-      _known[novel.id] = loaded;
-      return loaded;
-    } catch (_) {
-      final saved = await cachedBook(novel.id);
-      if (saved != null) return saved;
-      rethrow;
-    }
+    return await cachedBook(novel.id) ??
+        (throw const FormatException('本书没有本地缓存，请导入本地文件'));
   }
 
   @override
@@ -310,131 +200,29 @@ class OfflineNovelRepository extends FrameChangeNotifier
       return local?.book(id)?.chapters ??
           (throw const FormatException('本地原书不存在，请重新导入'));
     }
-    if (offline) {
-      final saved = await cachedBook(id);
-      if (saved == null || saved.chapters.isEmpty) {
-        throw const FormatException('当前无网络连接，本书目录尚未缓存');
-      }
-      _offlineDirectories.add(id);
-      return saved.chapters;
+    final saved = await cachedBook(id);
+    if (saved == null || saved.chapters.isEmpty) {
+      throw const FormatException('本书目录未保存在本地，请导入本地文件');
     }
-    final epoch = cache.epochFor(id);
-    try {
-      final chapters = await remote.chapters(id);
-      _offlineDirectories.remove(id);
-      final meta = _known[id];
-      if (meta != null) {
-        final full = meta.withChapters(chapters);
-        _known[id] = full;
-        await _remember(full, epoch);
-      }
-      return chapters;
-    } catch (_) {
-      final saved = await cachedBook(id);
-      if (saved != null && saved.chapters.isNotEmpty) {
-        _offlineDirectories.add(id);
-        return saved.chapters;
-      }
-      rethrow;
-    }
+    _offlineDirectories.add(id);
+    return saved.chapters;
   }
-
-  Future<void> rememberDirectory(Novel novel) async {
-    if (isLocalBook(novel.id)) return;
-    _known[novel.id] = novel;
-    final saved = cache.book(novel.id)?.novel;
-    if (saved != null &&
-        saved.title == novel.title &&
-        saved.author == novel.author &&
-        saved.summary == novel.summary &&
-        saved.genre == novel.genre &&
-        saved.coverUrl == novel.coverUrl &&
-        saved.isComplete == novel.isComplete &&
-        saved.lastUpdate == novel.lastUpdate &&
-        _sameDirectory(saved.chapters, novel.chapters)) {
-      return;
-    }
-    await _remember(novel, cache.epochFor(novel.id));
-  }
-
-  static bool _sameDirectory(List<NovelChapter> a, List<NovelChapter> b) {
-    if (identical(a, b)) return true;
-    if (a.length != b.length) return false;
-    for (var index = 0; index < a.length; index++) {
-      if (a[index].id != b[index].id ||
-          a[index].title != b[index].title ||
-          a[index].volumeId != b[index].volumeId ||
-          a[index].volumeTitle != b[index].volumeTitle) {
-        return false;
-      }
-    }
-    return true;
-  }
-
-  Future<void> _remember(Novel novel, CacheEpoch epoch) async {
-    if (novel.chapters.isEmpty || novel.chapters.any((c) => c.id <= 0)) return;
-    try {
-      await cache.saveBook(novel, epoch: epoch);
-      cacheError = null;
-    } catch (error) {
-      // A disk failure must not turn a successful online read into an error.
-      cacheError = error;
-      _changed(novel.id);
-    }
-  }
-
-  _ChapterRequest _retainRequest(int id, int cid, CacheEpoch epoch) {
-    final key = (id, cid, epoch);
-    final request = _requests.putIfAbsent(key, () => _ChapterRequest(key));
-    request.readers++;
-    return request;
-  }
-
-  void _releaseRequest(_ChapterRequest request) {
-    request.readers--;
-    if (request.readers == 0 && identical(_requests[request.key], request)) {
-      _requests.remove(request.key);
-    }
-  }
-
-  Future<String> _fetch(
-    int id,
-    NovelChapter chapter,
-    _ChapterRequest request,
-  ) => request.response ??= () async {
-    if (offline) throw const FormatException('当前无网络连接，这一章尚未缓存');
-    final text = await remote.chapterContent(id, chapter);
-    if (text.trim().isEmpty) throw const FormatException('章节正文为空');
-    return text;
-  }();
 
   @override
   Future<String> chapterContent(int novelId, NovelChapter chapter) async {
     if (isLocalBook(novelId)) return _localContent(novelId, chapter);
-    // Inline/demo chapters have no remote stable ID and stay source-owned.
-    if (chapter.id <= 0) return remote.chapterContent(novelId, chapter);
-    final epoch = cache.epochFor(novelId);
-    // Retain before the asynchronous disk lookup, through its eventual commit.
-    // A concurrent cache miss must not re-fetch a just-completed response.
-    final request = _retainRequest(novelId, chapter.id, epoch);
-    try {
-      final saved = await cache.readChapter(novelId, chapter.id);
-      if (saved != null) return saved;
-      if (saved != null && offline) {
-        throw const FormatException('本章旧缓存被插图标记截断，请联网刷新本章；原缓存仍保留');
-      }
-      final text = await _fetch(novelId, chapter, request);
-      await _saveBody(novelId, chapter.id, text, epoch);
-      return text;
-    } finally {
-      _releaseRequest(request);
+    // Keep source-owned inline chapters usable for demo and legacy snapshots.
+    if (chapter.id <= 0 && chapter.content.trim().isNotEmpty) {
+      return chapter.content;
     }
+    final saved = await cache.readChapter(novelId, chapter.id);
+    if (saved != null) return saved;
+    throw const FormatException('这一章没有本地缓存，请导入本地文件');
   }
 
   Future<void> removeCachedBook(int id) async {
     await cache.removeBook(id);
     _offlineDirectories.remove(id);
-    _illustrationRepairs.removeWhere((key) => key.$1 == id);
     cacheError = null;
     _changed(id);
   }
@@ -442,7 +230,6 @@ class OfflineNovelRepository extends FrameChangeNotifier
   Future<void> clearCache() async {
     await cache.clear();
     _offlineDirectories.clear();
-    _illustrationRepairs.clear();
     cacheError = null;
     _changed();
   }

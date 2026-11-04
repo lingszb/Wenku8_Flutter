@@ -5072,7 +5072,6 @@ class _ReaderPageState extends State<ReaderPage>
   late Future<({ReaderContent? content, Object? error})> _content;
   ReaderContent? _currentContent;
   ReaderContent? _unfilteredContent;
-  bool _illustrationsRefreshing = false;
   final _findMatch = ValueNotifier<ReaderMatch?>(null);
   final _bookmarkLanding = ValueNotifier<int?>(null);
   Timer? _bookmarkLandingTimer;
@@ -6203,7 +6202,6 @@ class _ReaderPageState extends State<ReaderPage>
     _findMatch.value = null;
     _currentContent = null;
     _unfilteredContent = null;
-    _illustrationsRefreshing = false;
     _autoPageTimer?.cancel();
     _autoPageTimer = null;
     _autoScroll.stop();
@@ -6377,7 +6375,6 @@ class _ReaderPageState extends State<ReaderPage>
         ? source.chapters[index].id
         : null;
     final generation = ++_contentGeneration;
-    _illustrationsRefreshing = false;
     _chapterRevealPending = false;
     _chapterReveal.value = 1;
     // Picker results can arrive between frames. Carry expected request failure
@@ -6533,10 +6530,6 @@ class _ReaderPageState extends State<ReaderPage>
         return;
       }
       _prefetchAdjacent();
-      if (content.paragraphs.any((p) => p.trim() == '[插图]') &&
-          widget.repository is OfflineNovelRepository) {
-        unawaited(_refreshIllustrations(automatic: true));
-      }
     }
 
     WidgetsBinding.instance.addPostFrameCallback(afterFrame);
@@ -6861,77 +6854,10 @@ class _ReaderPageState extends State<ReaderPage>
 
   Future<String> _requestContent(int index, {bool refresh = false}) async {
     if (_sourceBook.chapters.isEmpty) throw const FormatException('目录为空');
-    if (widget.repository case final OfflineNovelRepository offline) {
-      await offline.rememberDirectory(_sourceBook);
-      if (refresh) {
-        return offline.refreshChapterContent(
-          widget.novel.id,
-          _sourceBook.chapters[index],
-        );
-      }
-    }
     return widget.repository.chapterContent(
       widget.novel.id,
       _sourceBook.chapters[index],
     );
-  }
-
-  Future<void> _refreshIllustrations({bool automatic = false}) async {
-    if (_illustrationsRefreshing) return;
-    final chapter = _chapter;
-    final generation = _contentGeneration;
-    setState(() => _illustrationsRefreshing = true);
-    try {
-      final body = automatic
-          ? await (widget.repository as OfflineNovelRepository)
-                .repairChapterIllustrations(
-                  widget.novel.id,
-                  _sourceBook.chapters[chapter],
-                )
-          : await _requestContent(chapter, refresh: true);
-      if (body == null) return;
-      final source = await ReaderContent.parse(body);
-      if (!mounted || chapter != _chapter || generation != _contentGeneration) {
-        return;
-      }
-      _preparedContent[chapter] = source;
-      final placed = placeIllustrations(
-        await _automaticIllustrations(source, chapter),
-        widget.state.illustrationsFor(
-          widget.novel.id,
-          chapterId: _sourceBook.chapters[chapter].id,
-        ),
-      );
-      final localized = await placed.localizedAsync(
-        Locale('zh', _readerRegion ?? 'CN'),
-      );
-      final content = localized.withHiddenLanguages(
-        widget.state.hiddenReaderLanguagesFor(widget.novel.id),
-        onlyLanguage: widget.state.onlyReaderLanguageFor(widget.novel.id),
-      );
-      if (!mounted || chapter != _chapter || generation != _contentGeneration) {
-        return;
-      }
-      final position = _currentPosition();
-      if (position != null) _prepareRestore(position);
-      setState(() {
-        _currentContent = content;
-        _unfilteredContent = localized;
-        _preparedDisplay[chapter] = (
-          spec: _displaySpec,
-          chapter: (content: content, unfiltered: localized),
-        );
-        _content = Future.value((content: content, error: null));
-      });
-    } catch (_) {
-      if (!automatic && mounted && chapter == _chapter) {
-        showNovelFeedback(context, '插图暂未更新成功，正文已保留，可稍后重试');
-      }
-    } finally {
-      if (mounted && generation == _contentGeneration) {
-        setState(() => _illustrationsRefreshing = false);
-      }
-    }
   }
 
   Widget _paragraphContent(
@@ -6992,27 +6918,18 @@ class _ReaderPageState extends State<ReaderPage>
     if (paragraphs[index].trim() == '[插图]') {
       return ReaderIllustrationFrame(
         fitPage: fullPage,
-        child: _illustrationsRefreshing
-            ? const LoadingSkeleton(
-                layout: SkeletonLayout.cover,
-                label: '正在补全插图',
-              )
-            : ContentPanel(
-                child: Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const ArchiveIcon(CupertinoIcons.photo),
-                      const SizedBox(height: 10),
-                      const AppText('暂未取得本章插图地址'),
-                      GlassTextButton(
-                        onPressed: () => _refreshIllustrationsFor(chapter),
-                        child: const AppText('重试本章插图'),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
+        child: const ContentPanel(
+          child: Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ArchiveIcon(CupertinoIcons.photo),
+                SizedBox(height: 10),
+                AppText('本地缓存中缺少这张插图'),
+              ],
+            ),
+          ),
+        ),
       );
     }
     final format = source?.formats[index];
@@ -7058,14 +6975,6 @@ class _ReaderPageState extends State<ReaderPage>
             : TextAlign.start,
       ),
     );
-  }
-
-  Future<void> _refreshIllustrationsFor(int chapter) async {
-    if (chapter != _chapter) {
-      _go(chapter, prepared: _scrollStream.dataFor(chapter));
-      await WidgetsBinding.instance.endOfFrame;
-    }
-    if (mounted && chapter == _chapter) await _refreshIllustrations();
   }
 
   Future<void> _openEpubNote(
@@ -9915,7 +9824,6 @@ class _ReaderPageState extends State<ReaderPage>
               _fontSize,
               _listening,
               _chapterRevealFirst,
-              _illustrationsRefreshing,
               widget.state.reduceMotion,
             );
             if (_paragraphWidgetSpec != rowSpec) {

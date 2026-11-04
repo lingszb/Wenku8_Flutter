@@ -512,9 +512,6 @@ class ListeningController {
         if (!_valid(generation)) return;
       }
       if (novel.chapters.isEmpty) throw const SpeechFailure('这本书还没有可朗读的章节');
-      if (repository case final OfflineNovelRepository offline) {
-        await offline.rememberDirectory(novel);
-      }
       if (!_valid(generation)) return;
       if (cursor != null) {
         final stable = cursor.chapterId > 0

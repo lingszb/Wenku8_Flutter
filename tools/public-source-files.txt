@@ -467,7 +467,6 @@ lib/lan_reading_page.dart
 lib/lan_reading_sync.dart
 lib/legacy_import.dart
 lib/legacy_import_page.dart
-lib/legacy_wenku_repository.dart
 lib/library_backup.dart
 lib/library_reflow.dart
 lib/library_replica.dart
@@ -549,7 +548,6 @@ lib/novel_feed_controller.dart
 lib/offline_cache.dart
 lib/offline_repository.dart
 lib/offline_widgets.dart
-lib/online_component.dart
 lib/pages.dart
 lib/palette_image.dart
 lib/palette_platform.dart

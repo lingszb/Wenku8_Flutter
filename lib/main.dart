@@ -12,7 +12,6 @@ import 'app_window_insets.dart';
 import 'app_licenses.dart';
 import 'app_repository.dart';
 import 'catalog.dart';
-import 'legacy_wenku_repository.dart';
 import 'library_state.dart';
 import 'local_platform.dart';
 import 'local_series_actions.dart';
@@ -74,9 +73,8 @@ Future<void> main() async {
       WidgetsBinding.instance.platformDispatcher.platformBrightness,
   };
   SystemChrome.setSystemUIOverlayStyle(novelSystemUiStyle(brightness));
-  const remote = LegacyWenkuRepository();
   final repository = LocalPlatform.fileActions
-      ? await openApplicationLibrary(remote: remote, network: network)
+      ? await openApplicationLibrary(network: network)
       : const DemoNovelRepository();
   if (repository is OfflineNovelRepository) {
     ReaderIllustrationCache.shared.offlineReader =
