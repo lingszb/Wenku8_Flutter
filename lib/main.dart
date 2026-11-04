@@ -38,7 +38,6 @@ import 'wenku_features.dart';
 import 'wenku_shelf_sync.dart';
 import 'publication_catalog.dart';
 import 'lan_reading_sync.dart';
-import 'lan_handoff_widgets.dart';
 import 'reader_handoff_navigation.dart';
 import 'reader_appearance.dart';
 import 'reader_illustrations.dart';

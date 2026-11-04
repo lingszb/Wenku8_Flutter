@@ -32,7 +32,7 @@ Set<String> bookFormatExtensions(Iterable<String> formats) => {
     },
 };
 const bookImportFormatsSummary =
-    'TXT、EPUB、Kindle（MOBI / AZW / AZW3 / PRC）、FB2、PDF、DOC / DOCX、RTF、HTML 和 Markdown，支持 ZIP 批量导入';
+    '当前源码版本支持 TXT、EPUB 手动导入；其他格式转换及文件夹扫描暂不可用';
 const iosBookImportFormatsSummary =
     'TXT、EPUB、Kindle（MOBI / AZW / AZW3 / PRC）、FB2、PDF、DOCX、RTF、HTML 和 Markdown，支持 ZIP 批量导入';
 const bookImportLimitsSummary =
@@ -41,7 +41,7 @@ const iosBookImportLimitsSummary =
     'EPUB / PDF / DOCX / ZIP：512 MiB；Kindle：256 MiB；TXT / FB2 / RTF：128 MiB；HTML / Markdown：32 MiB。ZIP 展开后合计不超过 1 GiB。';
 
 bool supportsBookImport(String name) => RegExp(
-  r'\.(txt|epub|mobi|azw|azw3|prc|fb2|pdf|docx?|rtf|html?|xhtml|md|markdown|zip)$',
+  r'\.(txt|epub)$',
   caseSensitive: false,
 ).hasMatch(name);
 

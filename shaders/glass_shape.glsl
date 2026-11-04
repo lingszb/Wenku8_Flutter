@@ -58,9 +58,16 @@ void main() {
         }
     }
     vec3 center = glassPoint(position);
+    #ifdef SKIA_GRAPHICS_BACKEND
+    // Runtime SkSL does not support screen-space derivatives.
+    float aa = 1.5;
+    vec2 dx = vec2(0.5, 0.0);
+    vec2 dy = vec2(0.0, 0.5);
+    #else
     float aa = max(fwidth(center.z), 1.0);
     vec2 dx = dFdx(center.xy) * 0.25;
     vec2 dy = dFdy(center.xy) * 0.25;
+    #endif
     if (any(greaterThanEqual(distance, uRect.zw * 0.5))) {
         fragColor = vec4(0.0);
         return;

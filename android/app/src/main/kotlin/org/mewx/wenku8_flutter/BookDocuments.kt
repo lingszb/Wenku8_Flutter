@@ -112,19 +112,10 @@ class BookDocuments internal constructor(
                 try { @Suppress("DEPRECATION") activity.startActivityForResult(intent, REQUEST) }
                 catch (_: Exception) { pending = null; result.error("picker", "系统文件选择器不可用", null) }
             }
-            "selectAllScan" -> {
-                if (pending != null) { result.error("busy", "请先完成当前文件选择", null); return }
-                if (scanner.canReadAll()) { background(result) { scanner.selectAll() }; return }
-                pending = Pending(call.method, result)
-                try {
-                    if (Build.VERSION.SDK_INT >= 30) {
-                        val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
-                            Uri.parse("package:${activity.packageName}"))
-                        @Suppress("DEPRECATION") activity.startActivityForResult(intent, ALL_REQUEST)
-                    } else activity.requestPermissions(arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE), ALL_REQUEST)
-                } catch (_: Exception) { pending = null; result.error("permission", "系统未提供共享存储授权，请选择指定文件夹", null) }
+            "selectAllScan", "selectScanFolder" -> {
+                result.error("unsupported", "当前源码版本暂不支持文件夹扫描，请直接选择 TXT 或 EPUB 文件", null)
             }
-            "pickBook", "pickBooks", "pickDictionaryFiles", "pickTextReference", "pickOriginalReference", "pickFont", "pickImage", "openSync", "createSync", "selectScanFolder" -> {
+            "pickBook", "pickBooks", "pickDictionaryFiles", "pickTextReference", "pickOriginalReference", "pickFont", "pickImage", "openSync", "createSync" -> {
                 if (pending != null) { result.error("busy", "请先完成当前文件选择", null); return }
                 val create = call.method == "createSync"
                 val folder = call.method == "selectScanFolder"
