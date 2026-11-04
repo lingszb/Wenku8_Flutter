@@ -3844,7 +3844,6 @@ class _DetailPageState extends State<DetailPage> with TickerProviderStateMixin {
   bool _cacheSkeletonShown = false;
   bool _readerOpening = false;
   bool _shelfChanging = false;
-  bool _cacheOpen = false;
   bool _catalogueOrderSaving = false;
   bool _summaryExpanded = false;
   late bool _catalogueReversed = state
@@ -5086,40 +5085,7 @@ class _DetailPageState extends State<DetailPage> with TickerProviderStateMixin {
       '图书详情',
       style: TextStyle(fontSize: 18, height: 1.2, fontWeight: FontWeight.w700),
     ),
-    actions: [
-      if (!isLocalBook(novel.id))
-        GlassIconButton(
-          key: const ValueKey('detail-cache'),
-          icon: CupertinoIcons.cloud_download,
-          label: '缓存图书',
-          onPressed:
-              repository is OfflineNovelRepository &&
-                  !isLoading &&
-                  loadError == null &&
-                  novel.chapters.isNotEmpty
-              ? _openCache
-              : null,
-        ),
-    ],
   );
-
-  Future<void> _openCache() async {
-    if (_cacheOpen || repository is! OfflineNovelRepository) return;
-    _cacheOpen = true;
-    try {
-      await showJellySheet<void>(
-        context: context,
-        reduceMotion: _reduceMotion,
-        maxWidth: 720,
-        builder: (_) => OfflineVolumeCacheSheet(
-          repository: repository as OfflineNovelRepository,
-          novel: novel,
-        ),
-      );
-    } finally {
-      _cacheOpen = false;
-    }
-  }
 
   Future<void> _openReader(
     BuildContext context,

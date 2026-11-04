@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:collection';
 
 import 'package:flutter/foundation.dart';
 
@@ -8,58 +7,10 @@ import 'book_search.dart';
 import 'offline_cache.dart';
 import 'local_books.dart';
 import 'network_status.dart';
-import 'legacy_transport.dart';
 import 'reader_content.dart'
-    show ReaderContent, readerHasMissingIllustrations, readerIllustrationUrl;
+    show readerHasMissingIllustrations, readerIllustrationUrl;
 import 'ui_notifiers.dart';
 import 'tag_catalogue.dart';
-
-enum DownloadPhase {
-  queued,
-  preparing,
-  downloading,
-  completed,
-  cancelled,
-  failed,
-}
-
-class ChapterDownload {
-  ChapterDownload(this.novel, this.chapterIds, this.epoch);
-  Novel novel;
-  final Set<int>? chapterIds;
-  final CacheEpoch epoch;
-  DownloadPhase phase = DownloadPhase.queued;
-  int completed = 0;
-  int total = 0;
-  int illustrations = 0;
-  bool cachingIllustrations = false;
-  String? failedChapter;
-  Object? error;
-
-  bool get active => switch (phase) {
-    DownloadPhase.queued ||
-    DownloadPhase.preparing ||
-    DownloadPhase.downloading => true,
-    _ => false,
-  };
-  String get label => switch (phase) {
-    DownloadPhase.queued => '等待缓存',
-    DownloadPhase.preparing => '正在获取目录',
-    DownloadPhase.downloading =>
-      cachingIllustrations
-          ? '已缓存 $completed / $total 章 · 正在缓存插图'
-          : '已缓存 $completed / $total 章',
-    DownloadPhase.completed =>
-      '缓存完成 · $completed 章${illustrations > 0 ? ' · $illustrations 张插图' : ''}',
-    DownloadPhase.cancelled => '已取消 · 保留已缓存章节',
-    DownloadPhase.failed =>
-      failedChapter == null
-          ? '获取目录失败，可重试'
-          : cachingIllustrations
-          ? '「$failedChapter」插图未缓存完成，可继续缓存'
-          : '「$failedChapter」缓存失败，可重试',
-  };
-}
 
 class _ChapterRequest {
   _ChapterRequest(this.key);
@@ -77,11 +28,7 @@ class OfflineNovelRepository extends FrameChangeNotifier
     required this.cache,
     this.local,
     this.network,
-    Future<Uint8List> Function(String url)? illustrationRequest,
-  }) : _illustrationRequest =
-           illustrationRequest ??
-           ((url) =>
-               LegacyTransport.illustration(url, cacheForViewing: false)) {
+  }) {
     cache.addListener(_cacheChanged);
     local?.addListener(_cacheChanged);
   }
@@ -90,7 +37,6 @@ class OfflineNovelRepository extends FrameChangeNotifier
   final OfflineCacheStore cache;
   final LocalBookStore? local;
   final NetworkStatus? network;
-  final Future<Uint8List> Function(String url) _illustrationRequest;
   bool get offline => network?.offline ?? false;
   bool availableOffline(int id) =>
       local?.book(id) != null || (cache.book(id)?.cachedCount ?? 0) > 0;
@@ -98,16 +44,11 @@ class OfflineNovelRepository extends FrameChangeNotifier
   final Set<int> _offlineDirectories = {};
   final Map<(int, int, CacheEpoch), _ChapterRequest> _requests = {};
   final Set<(int, int, CacheEpoch)> _illustrationRepairs = {};
-  final Map<int, ChapterDownload> _jobs = {};
-  final Queue<ChapterDownload> _queue = Queue();
   final Map<int, FrameChangeNotifier> _bookChanges = {};
   final Map<int, Listenable> _bookObservers = {};
-  bool _draining = false;
   bool _disposed = false;
   Object? cacheError;
 
-  ChapterDownload? jobFor(int id) => _jobs[id];
-  List<ChapterDownload> get jobs => List.unmodifiable(_jobs.values);
   bool isDirectoryOffline(int id) => _offlineDirectories.contains(id);
   Listenable bookChanges(int id) => _bookObservers.putIfAbsent(
     id,
@@ -490,173 +431,8 @@ class OfflineNovelRepository extends FrameChangeNotifier
     }
   }
 
-  void download(Novel novel, {Set<int>? chapterIds}) {
-    if (isLocalBook(novel.id)) return;
-    if (_disposed || jobFor(novel.id)?.active == true) return;
-    final job = ChapterDownload(
-      novel,
-      chapterIds == null ? null : Set.unmodifiable(chapterIds),
-      cache.epochFor(novel.id),
-    );
-    _jobs[novel.id] = job;
-    _queue.add(job);
-    _changed(novel.id);
-    if (!_draining) unawaited(_drain());
-  }
-
-  void cancel(int id) {
-    final job = _jobs[id];
-    if (job?.active != true) return;
-    job!.phase = DownloadPhase.cancelled;
-    _changed(id);
-  }
-
-  void retry(int id) {
-    final previous = _jobs[id];
-    if (previous == null || previous.active) return;
-    download(previous.novel, chapterIds: previous.chapterIds);
-  }
-
-  bool _current(ChapterDownload job) {
-    if (_disposed || !job.active) return false;
-    if (!cache.isCurrent(job.novel.id, job.epoch)) {
-      job.phase = DownloadPhase.cancelled;
-      _changed(job.novel.id);
-      return false;
-    }
-    return true;
-  }
-
-  Future<void> _drain() async {
-    _draining = true;
-    try {
-      while (_queue.isNotEmpty && !_disposed) {
-        final job = _queue.removeFirst();
-        if (!_current(job)) continue;
-        await _run(job);
-      }
-    } finally {
-      _draining = false;
-    }
-  }
-
-  Future<void> _run(ChapterDownload job) async {
-    try {
-      job.phase = DownloadPhase.preparing;
-      _changed(job.novel.id);
-      if (offline) throw const FormatException('当前无网络连接，联网后可继续缓存');
-      // Refresh through the same legacy calls before an explicit book download.
-      final meta = await remote.detail(job.novel);
-      if (!_current(job)) return;
-      final chapters = await remote.chapters(meta.id);
-      if (!_current(job)) return;
-      final full = meta.withChapters(chapters);
-      if (chapters.isEmpty) throw const FormatException('目录为空');
-      final stored = await cache.saveBook(full, epoch: job.epoch);
-      if (!_current(job)) return;
-      if (!stored) throw StateError('目录缓存未完成');
-      _known[meta.id] = full;
-      job.novel = full;
-      final selected = chapters
-          .where((c) => job.chapterIds?.contains(c.id) ?? true)
-          .toList();
-      if (selected.isEmpty) throw const FormatException('选择的章节已不在目录中');
-      job.total = selected.length;
-      job.phase = DownloadPhase.downloading;
-      _changed(job.novel.id);
-      final cachedIllustrations = <String>{};
-      for (final chapter in selected) {
-        if (!_current(job)) return;
-        job.failedChapter = chapter.title;
-        job.cachingIllustrations = false;
-        final request = _retainRequest(meta.id, chapter.id, job.epoch);
-        try {
-          final saved = await cache.readChapter(meta.id, chapter.id);
-          if (!_current(job)) return;
-          var text = saved;
-          if (text == null || readerHasMissingIllustrations(text)) {
-            text = await _fetch(meta.id, chapter, request);
-            if (saved != null && readerHasMissingIllustrations(text)) {
-              job.cachingIllustrations = true;
-              throw const FormatException('本章插图地址暂未完整返回，原有正文已保留，请稍后继续缓存');
-            }
-            // Cancelling stops further calls and suppresses a late body commit.
-            if (!_current(job)) return;
-            final stored = await cache.saveChapter(
-              meta.id,
-              chapter.id,
-              text,
-              epoch: job.epoch,
-            );
-            if (!_current(job)) return;
-            if (!stored) throw StateError('章节已不在本地目录中');
-          }
-          if (readerHasMissingIllustrations(text)) {
-            job.cachingIllustrations = true;
-            throw const FormatException('本章插图地址暂未完整返回，正文已保留，请稍后继续缓存');
-          }
-          final images = text.contains('<!--image-->')
-              ? (await ReaderContent.parse(text)).illustrations.toSet()
-              : const <String>{};
-          for (final url in images) {
-            if (!_current(job)) return;
-            if (url.startsWith('wenku-local:') ||
-                cachedIllustrations.contains(url)) {
-              continue;
-            }
-            job.cachingIllustrations = true;
-            _changed(job.novel.id);
-            if (!await cache.hasIllustration(meta.id, url)) {
-              if (!_current(job)) return;
-              final retained = await cache.readIllustration(url);
-              if (!_current(job)) return;
-              if (retained == null && offline) {
-                throw const FormatException('当前无网络连接，联网后可继续缓存插图');
-              }
-              final bytes = retained ?? await _illustrationRequest(url);
-              if (!_current(job)) return;
-              final stored = await cache.saveIllustration(
-                meta.id,
-                url,
-                bytes,
-                epoch: job.epoch,
-              );
-              if (!_current(job)) return;
-              if (!stored) throw StateError('书籍缓存已移除');
-            }
-            cachedIllustrations.add(url);
-            job.illustrations++;
-          }
-          if (!_current(job)) return;
-          job.cachingIllustrations = false;
-          job.completed++;
-          _changed(job.novel.id);
-        } finally {
-          _releaseRequest(request);
-        }
-      }
-      job.failedChapter = null;
-      job.phase = DownloadPhase.completed;
-      cacheError = null;
-      _changed(job.novel.id);
-    } catch (error) {
-      if (!_current(job)) return;
-
-      // Retry skips committed bodies and images, but still examines cached
-      // bodies so older text-only downloads can fill their missing media.
-      job.error = error;
-      job.phase = DownloadPhase.failed;
-      _changed(job.novel.id);
-    }
-  }
-
   Future<void> removeCachedBook(int id) async {
-    final previousJob = _jobs[id];
-    cancel(id);
     await cache.removeBook(id);
-    // A newer download may already own the new cache generation. Deletion
-    // completion must not remove that later user action's progress entry.
-    if (identical(_jobs[id], previousJob)) _jobs.remove(id);
     _offlineDirectories.remove(id);
     _illustrationRepairs.removeWhere((key) => key.$1 == id);
     cacheError = null;
@@ -664,12 +440,7 @@ class OfflineNovelRepository extends FrameChangeNotifier
   }
 
   Future<void> clearCache() async {
-    for (final job in _jobs.values) {
-      if (job.active) job.phase = DownloadPhase.cancelled;
-    }
-    _changed();
     await cache.clear();
-    _jobs.removeWhere((_, job) => !cache.isCurrent(job.novel.id, job.epoch));
     _offlineDirectories.clear();
     _illustrationRepairs.clear();
     cacheError = null;
@@ -679,9 +450,6 @@ class OfflineNovelRepository extends FrameChangeNotifier
   @override
   void dispose() {
     _disposed = true;
-    for (final job in _jobs.values) {
-      if (job.active) job.phase = DownloadPhase.cancelled;
-    }
     cache.removeListener(_cacheChanged);
     local?.removeListener(_cacheChanged);
     for (final observer in _bookChanges.values) {
