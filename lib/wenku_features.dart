@@ -1,12 +1,10 @@
 import 'package:flutter/widgets.dart';
 
 import 'wenku_account.dart';
-import 'wenku_shelf_sync.dart';
 
 class WenkuFeatures {
-  const WenkuFeatures({required this.account, this.shelfSync});
+  const WenkuFeatures({required this.account});
   final WenkuAccount account;
-  final WenkuShelfSync? shelfSync;
 }
 
 /// Capabilities are injected once, not subscribed at the application root.

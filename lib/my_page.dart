@@ -52,7 +52,6 @@ class MyPage extends StatelessWidget {
               AnimatedBuilder(
                 animation: Listenable.merge([
                   features?.account ?? state.bookmarkChanges,
-                  ?features?.shelfSync,
                 ]),
                 builder: (context, _) {
                   final account = features?.account;
@@ -137,16 +136,8 @@ class MyPage extends StatelessWidget {
                                 account?.authenticated == true
                                     ? profile == null
                                           ? '账号已连接'
-                                          : '${profile.score} 积分 · ${profile.rank}${features?.shelfSync == null
-                                                ? ''
-                                                : features!.shelfSync!.syncing
-                                                ? '\n书架正在同步'
-                                                : features.shelfSync!.error != null
-                                                ? '\n书架待同步 · ${features.shelfSync!.error}'
-                                                : features.shelfSync!.syncedAt != null
-                                                ? '\n书架已与文库同步'
-                                                : ''}'
-                                    : '轻小说文库账号 · 云书架与每日签到',
+                                          : '${profile.score} 积分 · ${profile.rank}'
+                                    : '轻小说文库账号 · 每日签到',
                                 style: TextStyle(
                                   fontSize: 12,
                                   height: 1.6,

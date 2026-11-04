@@ -35,7 +35,6 @@ import 'updates/harmony_update_platform.dart';
 import 'updates/update_page.dart';
 import 'wenku_account.dart';
 import 'wenku_features.dart';
-import 'wenku_shelf_sync.dart';
 import 'lan_reading_sync.dart';
 import 'reader_handoff_navigation.dart';
 import 'reader_appearance.dart';
@@ -91,17 +90,7 @@ Future<void> main() async {
   if (repository is OfflineNovelRepository && repository.local != null) {
     await reconcileLocalSeries(repository.local!, state);
   }
-  final features = account != null
-      ? WenkuFeatures(
-          account: account,
-          shelfSync: WenkuShelfSync(
-            account: account,
-            library: state,
-            preferences: await SharedPreferences.getInstance(),
-            network: network,
-          )..start(),
-        )
-      : null;
+  final features = account != null ? WenkuFeatures(account: account) : null;
   final customSpeech = LocalPlatform.listening ? CustomSpeechSettings() : null;
   await customSpeech?.load();
   final listening = LocalPlatform.listening
@@ -647,7 +636,6 @@ class _NovelAppState extends State<NovelApp> with WidgetsBindingObserver {
     _widgetCards.dispose();
     state.settingsChanges.removeListener(_orientationChanged);
     WidgetsBinding.instance.removeObserver(this);
-    features?.shelfSync?.dispose();
     _updateNavigation.dispose();
     updates?.removeListener(_queueStartupReading);
     _readerHandoff.dispose();

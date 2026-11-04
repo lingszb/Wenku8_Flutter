@@ -677,7 +677,6 @@ lib/updates/update_page.dart
 lib/user_fonts.dart
 lib/wenku_account.dart
 lib/wenku_features.dart
-lib/wenku_shelf_sync.dart
 ohos/.gitignore
 ohos/AppScope/app.json5
 ohos/AppScope/resources/base/element/string.json
