@@ -89,6 +89,8 @@ fabric.properties
 .pub/
 .fvm/flutter_sdk
 /build/
+/.tmp/
+/.worktrees/
 /coverage/
 /.local-samples/
 /android/.gradle/
