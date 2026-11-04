@@ -8,7 +8,6 @@ import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'legacy_cover.dart';
 import 'library_state.dart';
 import 'local_book_media.dart';
 import 'local_platform.dart';
@@ -430,16 +429,14 @@ Future<String?> cachedReadingWidgetCover(
   final id = completion.bookId;
   if (id == null) return null;
   final url = state.cachedNovel(id)?.coverUrl;
-  if (url == null) return null;
+  if (url == null || !url.startsWith('wenku-local:')) return null;
   try {
     final directory = Directory(
       '${(await getApplicationSupportDirectory()).path}/reading-widget-covers-v1',
     );
     final target = File('${directory.path}/$id.png');
     if (await target.exists()) return target.path;
-    final Uint8List bytes = url.startsWith('wenku-local:')
-        ? await LocalBookMedia.loadCover(url)
-        : await LegacyCover.bytes(id, url: url);
+    final Uint8List bytes = await LocalBookMedia.loadCover(url);
     final codec = await ui.instantiateImageCodec(bytes, targetWidth: 360);
     try {
       final frame = await codec.getNextFrame();

@@ -1,13 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'app_interactions.dart';
 import 'catalog.dart';
-import 'legacy_cover.dart';
 import 'reader_illustrations.dart';
-
-ReaderIllustrationCache novelCoverImageCache(Novel book) =>
-    ReaderIllustrationCache(
-      request: (_) => LegacyCover.bytes(book.id, url: book.coverUrl),
-    );
 
 Future<void> openNovelCoverImage(
   BuildContext context,
@@ -15,7 +9,7 @@ Future<void> openNovelCoverImage(
   required bool reduceMotion,
 }) async {
   final url = book.coverUrl;
-  if (url == null) return;
+  if (url == null || !url.startsWith('wenku-local:')) return;
   await pushNovelPage<void>(
     context,
     ReaderIllustrationGallery(
@@ -23,7 +17,7 @@ Future<void> openNovelCoverImage(
       initialUrl: url,
       title: '小说封面',
       fileNamePrefix: book.title,
-      cache: novelCoverImageCache(book),
+      cache: ReaderIllustrationCache.shared,
     ),
     reduceMotion: reduceMotion,
   );

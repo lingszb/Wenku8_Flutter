@@ -465,7 +465,6 @@ lib/illustration_placement.dart
 lib/lan_handoff_widgets.dart
 lib/lan_reading_page.dart
 lib/lan_reading_sync.dart
-lib/legacy_cover.dart
 lib/legacy_import.dart
 lib/legacy_import_page.dart
 lib/legacy_transport.dart

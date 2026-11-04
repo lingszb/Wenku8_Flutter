@@ -14,7 +14,6 @@ import 'catalog.dart';
 import 'book_source_badge.dart';
 import 'performance_preferences.dart';
 import 'library_reflow.dart';
-import 'legacy_cover.dart';
 import 'local_book_media.dart';
 import 'archive_spine_title.dart';
 import 'library_state.dart';
@@ -990,6 +989,7 @@ class _LazyArchiveCoverState extends State<_LazyArchiveCover> {
     final book = widget.book;
     if (!_warm ||
         book.coverUrl == null ||
+        !book.coverUrl!.startsWith('wenku-local:') ||
         !TickerMode.valuesOf(context).enabled) {
       return;
     }
@@ -1002,9 +1002,7 @@ class _LazyArchiveCoverState extends State<_LazyArchiveCover> {
     _warming = key;
     unawaited(() async {
       try {
-        final bytes = book.coverUrl!.startsWith('wenku-local:')
-            ? await LocalBookMedia.loadCover(book.coverUrl!)
-            : await LegacyCover.bytes(book.id, url: book.coverUrl);
+        final bytes = await LocalBookMedia.loadCover(book.coverUrl!);
         if (!mounted || !_warm || _warming != key) return;
         // Decode one detent before the face is mounted, at exactly the same
         // resolution/key as NovelCover. No extra image widgets or tickers.

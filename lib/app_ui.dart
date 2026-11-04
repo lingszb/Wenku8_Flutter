@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'library_reflow.dart';
 import 'package:flutter/foundation.dart' show ValueListenable;
-import 'dart:ui' show ImageFilter, TileMode;
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
@@ -23,7 +22,6 @@ import 'app_palette.dart';
 import 'glass_controls.dart';
 import 'app_language.dart';
 export 'app_language.dart';
-import 'legacy_cover.dart';
 import 'loading_ui.dart';
 import 'motion_ui.dart';
 import 'native_effects.dart';
@@ -1586,8 +1584,7 @@ class NovelCover extends StatelessWidget {
                   direction == HeroFlightDirection.push ? to : from,
                 )?.animation ??
                 animation,
-            imageProvider: switch (LocalBookMedia.peek(novel.coverUrl) ??
-                LegacyCover.peek(novel.id)) {
+            imageProvider: switch (LocalBookMedia.peek(novel.coverUrl)) {
               final bytes? => ResizeImage.resizeIfNeeded(
                 novelCoverDecodeWidth(
                   flightWidth,
@@ -1671,10 +1668,8 @@ class NovelCover extends StatelessWidget {
                 key: ValueKey('cover-bytes-${novel.id}'),
                 future: novel.coverUrl?.startsWith('wenku-local:') == true
                     ? LocalBookMedia.loadCover(novel.coverUrl!)
-                    : LegacyCover.bytes(novel.id, url: novel.coverUrl),
-                initialData:
-                    LocalBookMedia.peek(novel.coverUrl) ??
-                    LegacyCover.peek(novel.id),
+                    : Future<Uint8List>.error(const FormatException('本地封面不可用')),
+                initialData: LocalBookMedia.peek(novel.coverUrl),
                 builder: (context, snapshot) {
                   final bytes = snapshot.data;
                   if (bytes == null) {
@@ -1728,109 +1723,6 @@ class NovelCover extends StatelessWidget {
   }
 }
 
-/// Extends grayscale cover luminance behind floating controls.
-class CoverGlow extends StatelessWidget {
-  const CoverGlow(this.novel, {super.key});
-
-  final Novel novel;
-
-  @override
-  Widget build(BuildContext context) {
-    if (novel.coverUrl == null ||
-        novel.coverUrl!.startsWith('wenku-local:') ||
-        !PerformanceScope.of(context).blur) {
-      return const SizedBox.shrink();
-    }
-    final dark = Theme.of(context).brightness == Brightness.dark;
-    final background = dark ? ArchiveDesign.darkBackground : Colors.white;
-    return FutureBuilder(
-      future: LegacyCover.bytes(novel.id, url: novel.coverUrl),
-      builder: (context, snapshot) {
-        if (!snapshot.hasData) return const SizedBox.shrink();
-        return ShaderMask(
-          blendMode: BlendMode.dstIn,
-          shaderCallback: (rect) {
-            final top = MediaQuery.viewPaddingOf(context).top;
-            // Fade within the header, while the layer itself spans the screen.
-            // There is no fractional-height clipping edge below the app bar.
-            return LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: const [
-                Colors.white,
-                Colors.white,
-                Colors.transparent,
-                Colors.transparent,
-              ],
-              stops: [
-                0,
-                ((top + 36) / rect.height).clamp(0.0, 1.0),
-                ((top + 170) / rect.height).clamp(0.0, 1.0),
-                1,
-              ],
-            ).createShader(rect);
-          },
-          child: ClipRect(
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                ImageFiltered(
-                  imageFilter: ImageFilter.blur(
-                    sigmaX: 30,
-                    sigmaY: 30,
-                    tileMode: TileMode.clamp,
-                  ),
-                  child: ColorFiltered(
-                    colorFilter: const ColorFilter.matrix([
-                      .2126,
-                      .7152,
-                      .0722,
-                      0,
-                      0,
-                      .2126,
-                      .7152,
-                      .0722,
-                      0,
-                      0,
-                      .2126,
-                      .7152,
-                      .0722,
-                      0,
-                      0,
-                      0,
-                      0,
-                      0,
-                      1,
-                      0,
-                    ]),
-                    child: Image.memory(snapshot.data!, fit: BoxFit.cover),
-                  ),
-                ),
-                DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [
-                        background.withValues(alpha: dark ? .45 : .53),
-                        background.withValues(alpha: .84),
-                        background,
-                      ],
-                      stops: const [0, .58, 1],
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-}
-
-/// Consistent recovery/empty states use the same typography, spacing and glass
-/// action as the rest of the app, rather than unrelated stock dialog styles.
 class ContentNotice extends StatelessWidget {
   const ContentNotice({
     super.key,
