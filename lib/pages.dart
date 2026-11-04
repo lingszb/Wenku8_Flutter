@@ -122,7 +122,6 @@ import 'ui_notifiers.dart';
 import 'route_identity.dart';
 import 'feature_pages.dart';
 import 'legacy_import_page.dart';
-import 'legacy_transport.dart';
 import 'book_share_action.dart';
 
 export 'app_ui.dart' show sectionHeader;
@@ -3082,21 +3081,20 @@ class SettingsPage extends StatelessWidget {
       ),
       const SizedBox(height: 14),
       FeatureEntry(
-        title: '清理插图缓存',
+        title: '清理插图内存缓存',
         icon: CupertinoIcons.photo,
-        subtitle: '不影响书架、正文缓存和阅读记录',
+        subtitle: '释放预览内存，保留原书、已存插图和阅读记录',
         onTap: () async {
           if (!await confirmNovelAction(
             context,
-            title: '清理已下载的插图？',
-            message: '插图下次查看时重新下载，正文和阅读记录仍保留。',
+            title: '清理插图内存缓存？',
+            message: '再次查看时从本地原书或已有缓存载入，不删除任何书籍文件。',
             confirmLabel: '清理插图',
             reduceMotion: state.reduceMotion,
           )) {
             return;
           }
           try {
-            await LegacyTransport.clearIllustrations();
             ReaderIllustrationCache.shared.clearMemory();
             if (context.mounted) showNovelFeedback(context, '插图缓存已清理');
           } catch (_) {

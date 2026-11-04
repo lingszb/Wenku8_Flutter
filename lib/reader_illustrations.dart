@@ -8,12 +8,9 @@ import 'package:flutter/services.dart';
 import 'app_ui.dart';
 import 'app_interactions.dart';
 import 'local_platform.dart';
-import 'legacy_transport.dart';
 import 'local_book_media.dart';
 import 'local_image_layout.dart';
 import 'gallery_save_button.dart';
-
-typedef IllustrationRequest = Future<Uint8List> Function(String url);
 
 class _IllustrationSource {
   _IllustrationSource(this.epoch, this.revision, {required this.retain});
@@ -43,12 +40,10 @@ class _IllustrationDecodes {
 /// not by chapter count. Completed futures are not retained after eviction.
 class ReaderIllustrationCache {
   ReaderIllustrationCache({
-    IllustrationRequest? request,
     this.offlineReader,
     this.maxBytes = 16 * 1024 * 1024,
-  }) : _request = request ?? LegacyTransport.illustration;
+  });
   static final shared = ReaderIllustrationCache();
-  final IllustrationRequest _request;
 
   /// The application binds its explicit book cache once at startup. Viewing
   /// cache eviction never deletes these durable, book-owned illustrations.
@@ -263,7 +258,8 @@ class ReaderIllustrationCache {
           ? await input
           : url.startsWith('wenku-local:')
           ? await LocalBookMedia.load(url)
-          : await offlineReader?.call(url) ?? await _request(url);
+          : await offlineReader?.call(url) ??
+                (throw const FormatException('本地插图不存在'));
       if (bytes.isEmpty || bytes.length > 8 * 1024 * 1024) {
         throw const FormatException('插图大小无效');
       }
