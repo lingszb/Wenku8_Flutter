@@ -2050,7 +2050,7 @@ class _ShelfPageState extends State<ShelfPage>
                   'all': '全部来源',
                   'local': '本地导入',
                   'cached': '已缓存',
-                  'online': '在线收藏',
+                  'online': '历史收藏',
                 }
               : const {},
           hint: '只调整立体书架，下方列表保留自己的分类、筛选和排序。',
@@ -2276,7 +2276,7 @@ class _ShelfPageState extends State<ShelfPage>
                     'all': '全部来源',
                     'local': '本地导入',
                     'cached': '已缓存',
-                    'online': '在线收藏',
+                    'online': '历史收藏',
                   }
                 : const {},
             shelfContentHint: '仅调整上方立体书架；下方继续使用页面上的分类、筛选和排序。',

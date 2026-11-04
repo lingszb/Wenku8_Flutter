@@ -1052,7 +1052,7 @@ class _ReadingStatisticsPageState extends State<ReadingStatisticsPage>
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _Metrics([
-          _Metric('在线书架', '${data.onlineBooks}', '本'),
+          _Metric('历史收藏', '${data.onlineBooks}', '本'),
           _Metric('本地书籍', '${data.localBooks}', '本'),
           if (data.authorCount > 0) _Metric('已知作者', '${data.authorCount}', '位'),
         ], columns: 3),
