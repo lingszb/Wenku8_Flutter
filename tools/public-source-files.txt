@@ -559,7 +559,6 @@ lib/palette_settings_page.dart
 lib/performance_preferences.dart
 lib/personal_images.dart
 lib/portable_book_prepare.dart
-lib/publication_catalog.dart
 lib/quote_card.dart
 lib/read_only_text.dart
 lib/reader_annotation_editor.dart
@@ -676,7 +675,6 @@ lib/updates/release_markdown.dart
 lib/updates/release_notices.dart
 lib/updates/update_page.dart
 lib/user_fonts.dart
-lib/web_publication_catalog.dart
 lib/wenku_account.dart
 lib/wenku_features.dart
 lib/wenku_shelf_sync.dart

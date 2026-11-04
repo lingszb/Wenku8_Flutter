@@ -36,7 +36,6 @@ import 'updates/update_page.dart';
 import 'wenku_account.dart';
 import 'wenku_features.dart';
 import 'wenku_shelf_sync.dart';
-import 'publication_catalog.dart';
 import 'lan_reading_sync.dart';
 import 'reader_handoff_navigation.dart';
 import 'reader_appearance.dart';
@@ -95,9 +94,6 @@ Future<void> main() async {
   final features = account != null
       ? WenkuFeatures(
           account: account,
-          // The authenticated novellist response already contains book metadata.
-          // Reuse its adapter, pagination and the existing account session.
-          publications: remote as PublicationCatalog,
           shelfSync: WenkuShelfSync(
             account: account,
             library: state,

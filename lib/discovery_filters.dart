@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/cupertino.dart';
 import 'app_ui.dart';
 import 'app_search_field.dart';
@@ -7,15 +5,12 @@ import 'catalog.dart';
 import 'book_tag_catalog.dart';
 import 'glass_choices.dart';
 import 'tag_catalogue.dart';
-import 'publication_catalog.dart';
 
-/// The selected discovery source. Publication, ranking and tags are mutually
-/// exclusive; a publication's service cannot apply ranking or tag parameters.
+/// The selected discovery ranking or tags.
 class DiscoverySelection {
-  const DiscoverySelection({this.sort, this.tags, this.publication});
+  const DiscoverySelection({this.sort, this.tags});
   final NovelSort? sort;
   final Set<String>? tags;
-  final PublicationLibrary? publication;
 }
 
 class DiscoveryFilters extends StatefulWidget {
@@ -28,9 +23,6 @@ class DiscoveryFilters extends StatefulWidget {
     this.blockedTags = const {},
     this.onBlockedTagsChanged,
     this.editingBlockedTags = false,
-    this.publicationCatalog,
-    this.selectedPublication,
-    this.preparePublications,
   });
   final NovelSort sort;
   final List<Novel> books;
@@ -39,9 +31,6 @@ class DiscoveryFilters extends StatefulWidget {
   final Set<String> blockedTags;
   final Future<void> Function(Set<String>)? onBlockedTagsChanged;
   final bool editingBlockedTags;
-  final PublicationCatalog? publicationCatalog;
-  final PublicationLibrary? selectedPublication;
-  final Future<void> Function()? preparePublications;
   @override
   State<DiscoveryFilters> createState() => _DiscoveryFiltersState();
 }
@@ -50,8 +39,6 @@ class _DiscoveryFiltersState extends State<DiscoveryFilters> {
   late String mode =
       widget.editingBlockedTags && widget.onBlockedTagsChanged != null
       ? 'blocked'
-      : widget.selectedPublication != null && widget.publicationCatalog != null
-      ? 'publication'
       : widget.selectedTags.isEmpty
       ? 'sort'
       : 'tags';
@@ -60,85 +47,11 @@ class _DiscoveryFiltersState extends State<DiscoveryFilters> {
   final query = TextEditingController();
   bool _saving = false;
   String? _saveError;
-  List<PublicationLibrary>? _publications;
-  bool _loadingPublications = false;
-  String? _publicationError;
   Set<String> get _editing => mode == 'blocked' ? blocked : selected;
   bool _isSelected(String tag) => mode == 'blocked'
       ? blocked.any((value) => _tagKey(value) == _tagKey(tag))
       : selected.contains(tag);
   String _tagKey(String value) => value.trim().toLowerCase();
-  @override
-  void initState() {
-    super.initState();
-    if (mode == 'publication') unawaited(_loadPublications());
-  }
-
-  Future<void> _loadPublications() async {
-    final catalog = widget.publicationCatalog;
-    if (catalog == null || _loadingPublications) return;
-    setState(() {
-      _loadingPublications = true;
-      _publicationError = null;
-    });
-    try {
-      await widget.preparePublications?.call();
-      if (!mounted) return;
-      final libraries = await catalog.publicationLibraries(refresh: true);
-      if (mounted) setState(() => _publications = libraries);
-    } catch (_) {
-      if (mounted) {
-        setState(() => _publicationError = '出版文库暂未载入，请重试。');
-      }
-    } finally {
-      if (mounted) setState(() => _loadingPublications = false);
-    }
-  }
-
-  Widget _publicationChoices() {
-    if (_loadingPublications) {
-      return const Padding(
-        padding: EdgeInsets.symmetric(vertical: 32),
-        child: Center(child: CupertinoActivityIndicator()),
-      );
-    }
-    if (_publicationError case final error?) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 20),
-        child: Column(
-          children: [
-            AppText(error),
-            const SizedBox(height: 12),
-            GlassTextButton(
-              key: const ValueKey('discover-publication-retry'),
-              onPressed: _loadPublications,
-              child: const AppText('重新加载'),
-            ),
-          ],
-        ),
-      );
-    }
-    final libraries = _publications ?? const <PublicationLibrary>[];
-    if (libraries.isEmpty) {
-      return const Padding(
-        padding: EdgeInsets.symmetric(vertical: 24),
-        child: AppText('暂无出版文库'),
-      );
-    }
-    return GlassChoiceGroup<int?>(
-      name: 'discover-publication',
-      label: '选择出版文库',
-      value: widget.selectedPublication?.id,
-      options: {for (final library in libraries) library.id: library.name},
-      onChanged: (id) => Navigator.pop<DiscoverySelection>(
-        context,
-        DiscoverySelection(
-          publication: libraries.firstWhere((library) => library.id == id),
-        ),
-      ),
-    );
-  }
-
   @override
   void dispose() {
     query.dispose();
@@ -224,17 +137,12 @@ class _DiscoveryFiltersState extends State<DiscoveryFilters> {
             children: {
               'sort': const AppText('榜单'),
               'tags': const AppText('标签'),
-              if (widget.publicationCatalog != null)
-                'publication': const AppText('出版文库'),
               if (widget.onBlockedTagsChanged != null)
                 'blocked': const AppText('屏蔽'),
             },
             onValueChanged: (value) {
               if (value == null || _saving) return;
               setState(() => mode = value);
-              if (value == 'publication' && _publications == null) {
-                unawaited(_loadPublications());
-              }
             },
           ),
           const SizedBox(height: 12),
@@ -242,11 +150,7 @@ class _DiscoveryFiltersState extends State<DiscoveryFilters> {
             GlassChoiceGroup<NovelSort?>(
               name: 'discover-sort',
               label: '选择榜单',
-              value:
-                  widget.selectedPublication == null &&
-                      widget.selectedTags.isEmpty
-                  ? widget.sort
-                  : null,
+              value: widget.selectedTags.isEmpty ? widget.sort : null,
               options: {for (final sort in NovelSort.values) sort: sort.label},
               optionName: (sort) => sort?.name ?? 'none',
               onChanged: (sort) => Navigator.pop<DiscoverySelection>(
@@ -254,8 +158,6 @@ class _DiscoveryFiltersState extends State<DiscoveryFilters> {
                 DiscoverySelection(sort: sort),
               ),
             )
-          else if (mode == 'publication')
-            _publicationChoices()
           else ...[
             Row(
               children: [

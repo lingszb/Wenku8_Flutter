@@ -1057,9 +1057,7 @@ class DiscoverPage extends StatelessWidget {
     final blockedAll = books.isEmpty && (feed?.blockedItemCount ?? 0) > 0;
     final returnToLatest =
         feed != null &&
-            (feed!.tags.isNotEmpty ||
-                feed!.publication != null ||
-                feed!.sort != NovelSort.lastUpdate)
+            (feed!.tags.isNotEmpty || feed!.sort != NovelSort.lastUpdate)
         ? GlassTextButton(
             key: const ValueKey('discover-return-to-latest'),
             onPressed: () => feed!.selectSort(NovelSort.lastUpdate),
@@ -1112,23 +1110,7 @@ class DiscoverPage extends StatelessWidget {
               onRetry: feed!.retry,
               secondaryAction: Column(
                 mainAxisSize: MainAxisSize.min,
-                children: [
-                  ?returnToLatest,
-                  if (feed?.publication != null &&
-                      WenkuFeaturesScope.maybeOf(context) != null)
-                    GlassTextButton(
-                      onPressed: () => pushNovelPage<void>(
-                        context,
-                        WenkuAccountPage(
-                          account: WenkuFeaturesScope.maybeOf(context)!.account,
-                          state: state,
-                          repository: repository,
-                        ),
-                        reduceMotion: state.reduceMotion,
-                      ),
-                      child: const AppText('查看账号连接'),
-                    ),
-                ],
+                children: [?returnToLatest],
               ),
             ),
           ),
@@ -1152,12 +1134,7 @@ class DiscoverPage extends StatelessWidget {
           return false;
         },
         child: KeyedSubtree(
-          key: ValueKey((
-            feed?.sort,
-            feed?.tags.join('|'),
-            feed?.publication?.id,
-            mode,
-          )),
+          key: ValueKey((feed?.sort, feed?.tags.join('|'), mode)),
           child: CustomScrollView(
             key: const PageStorageKey('discover'),
             clipBehavior: LibraryReflowScope.clipOf(context),
@@ -1336,7 +1313,6 @@ class DiscoverPage extends StatelessWidget {
 
   String get _lowerCategory =>
       categoryTitle ??
-      feed?.publication?.name ??
       (feed?.tags.isNotEmpty == true
           ? feed!.tags.join(' · ')
           : feed?.sort.label) ??
@@ -1365,7 +1341,6 @@ class DiscoverPage extends StatelessWidget {
       );
 
   Future<void> _chooseSort(BuildContext context) async {
-    final features = WenkuFeaturesScope.maybeOf(context);
     final selected = await showJellySheet<DiscoverySelection>(
       context: context,
       reduceMotion: state.reduceMotion,
@@ -1375,9 +1350,6 @@ class DiscoverPage extends StatelessWidget {
         books: feed!.allItems,
         selectedTags: feed!.tags.toSet(),
         availableTags: feed!.tagSuggestions,
-        publicationCatalog: features?.publications,
-        selectedPublication: feed!.publication,
-        preparePublications: features?.account.initialize,
         blockedTags: state.blockedTags,
         onBlockedTagsChanged: (tags) async {
           await state.setBlockedTags(tags);
@@ -1386,15 +1358,6 @@ class DiscoverPage extends StatelessWidget {
       ),
     );
     if (!context.mounted || selected == null) return;
-    if (selected.publication case final publication?) {
-      if (features == null) return;
-      await features.account.initialize();
-      if (!context.mounted) return;
-      await feed!.selectPublication(
-        publication,
-        catalog: features.publications,
-      );
-    }
     if (selected.sort case final sort?) await feed!.selectSort(sort);
     if (selected.tags case final tags?) await feed!.selectTags(tags);
   }

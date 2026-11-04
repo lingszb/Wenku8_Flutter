@@ -46,7 +46,6 @@ class WenkuAccount extends ChangeNotifier {
   List<CloudBook>? cloudBooks;
   int? syncedAt;
   int get sessionRevision => 0;
-  int get publicationRevision => 0;
   static String describeError(Object error) =>
       error is OnlineComponentUnavailable ||
           error is OnlineAuthenticationRequired
@@ -62,7 +61,6 @@ class WenkuAccount extends ChangeNotifier {
   }
 
   Future<void> login(String username, String password) => _unavailable();
-  Future<void> connectPublications(String password) => _unavailable();
   Future<void> refreshProfile() => _unavailable();
   Future<void> signIn() => _unavailable();
   Future<List<CloudBook>> refreshCloud() => _unavailable();

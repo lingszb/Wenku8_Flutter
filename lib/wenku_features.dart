@@ -1,17 +1,11 @@
 import 'package:flutter/widgets.dart';
 
-import 'publication_catalog.dart';
 import 'wenku_account.dart';
 import 'wenku_shelf_sync.dart';
 
 class WenkuFeatures {
-  const WenkuFeatures({
-    required this.account,
-    required this.publications,
-    this.shelfSync,
-  });
+  const WenkuFeatures({required this.account, this.shelfSync});
   final WenkuAccount account;
-  final PublicationCatalog publications;
   final WenkuShelfSync? shelfSync;
 }
 

@@ -1,12 +1,11 @@
 import 'catalog.dart';
 import 'online_component.dart';
-import 'publication_catalog.dart';
 import 'tag_catalogue.dart';
 
 /// Source-preview boundary. Online implementations are supplied separately.
 /// Existing book/chapter models remain shared with local reading and caches.
 class LegacyWenkuRepository extends NovelRepository
-    implements PublicationCatalog, ProgressiveTagCatalogue {
+    implements ProgressiveTagCatalogue {
   const LegacyWenkuRepository();
   @override
   Future<List<Novel>> list() => unavailableOnline();
@@ -21,16 +20,6 @@ class LegacyWenkuRepository extends NovelRepository
   @override
   Future<String> chapterContent(int novelId, NovelChapter chapter) =>
       unavailableOnline();
-  @override
-  Future<List<PublicationLibrary>> publicationLibraries({
-    bool refresh = false,
-  }) => unavailableOnline();
-  @override
-  Future<NovelPage> browsePublication(
-    int libraryId, {
-    int page = 1,
-    bool refresh = false,
-  }) => unavailableOnline();
   @override
   Future<NovelPage> tagPage(
     String tag, {
