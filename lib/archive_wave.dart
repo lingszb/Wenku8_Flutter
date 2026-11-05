@@ -329,8 +329,15 @@ class _ArchiveFileCarouselState extends State<ArchiveFileCarousel>
                       final book = widget.books[index % widget.books.length];
                       final scale =
                           MediaQuery.textScalerOf(context).scale(17) / 17;
-                      return SizedBox(
-                        height: 16 + 17 * 1.35 * 2 * scale + 12 * 1.4 * scale,
+                      // Keep the original caption's minimum height, but let
+                      // the actual text metrics determine its final height.
+                      // A fixed SizedBox can overflow by a few pixels when
+                      // two-line CJK titles and fallback fonts are laid out.
+                      return ConstrainedBox(
+                        constraints: BoxConstraints(
+                          minHeight:
+                              16 + 17 * 1.35 * 2 * scale + 12 * 1.4 * scale,
+                        ),
                         child: LoadingHandoff(
                           animation: _entrance,
                           crossfade: true,
