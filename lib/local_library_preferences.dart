@@ -11,6 +11,8 @@ import 'book_grid_density.dart';
 import 'book_collection_mode.dart';
 import 'book_shelf_preferences.dart';
 import 'book_shelf_content_preferences.dart';
+import 'book_tag_catalog.dart';
+import 'local_book_series.dart';
 
 enum LocalLibraryView { shelf, list, grid, shelfGrid }
 
@@ -25,6 +27,37 @@ class LocalLibraryPreferences extends ChangeNotifier {
   static const key = 'localLibraryView.v1';
   static const all = '_all', unfiled = '_unfiled';
   static const _authorPrefix = '_author:';
+  static const _tagPrefix = '_tag:', _seriesPrefix = '_series:';
+  static const noTag = '_tag_unassigned';
+  static const noSeries = '_series_unassigned';
+
+  static String tagCategory(String tag) =>
+      '$_tagPrefix${Uri.encodeComponent(bookTagKey(tag))}';
+  static String seriesCategory(String key) =>
+      '$_seriesPrefix${Uri.encodeComponent(seriesTitleKey(key))}';
+
+  static String? _dynamicValue(String category, String prefix) {
+    if (!category.startsWith(prefix)) return null;
+    try {
+      final value = Uri.decodeComponent(category.substring(prefix.length)).trim();
+      return value.isEmpty ? null : value;
+    } on FormatException {
+      return null;
+    }
+  }
+
+  static String? categoryTag(String category) =>
+      _dynamicValue(category, _tagPrefix);
+  static String? categorySeries(String category) =>
+      _dynamicValue(category, _seriesPrefix);
+
+  static bool dynamicCategory(String category) =>
+      categoryAuthor(category) != null ||
+      categoryTag(category) != null ||
+      categorySeries(category) != null ||
+      category == noTag ||
+      category == noSeries;
+
   static String authorName(String value) {
     final name = value.trim().replaceAll(RegExp(r'\s+'), ' ');
     return name.isEmpty || name == '本地书籍' ? '未知作者' : name;
@@ -44,9 +77,27 @@ class LocalLibraryPreferences extends ChangeNotifier {
     }
   }
 
-  bool matchesCategory(Novel book, String category) {
+  /// Dynamic queries are read-only views; only named groups own assignments.
+  bool matchesCategory(
+    Novel book,
+    String category, {
+    String? seriesKey,
+  }) {
     if (categoryAuthor(category) case final author?) {
       return authorName(book.author) == author;
+    }
+    if (category == noTag) return normalizeBookTags([book.genre]).isEmpty;
+    if (categoryTag(category) case final tag?) {
+      return normalizeBookTags([book.genre]).any(
+        (value) => bookTagKey(value) == tag,
+      );
+    }
+    final currentSeries = seriesKey ?? inferLocalSeries(book.title)?.key;
+    if (category == noSeries) {
+      return currentSeries == null || currentSeries.isEmpty;
+    }
+    if (categorySeries(category) case final series?) {
+      return currentSeries == series;
     }
     return category == all || groupOf(book.id) == category;
   }
@@ -107,6 +158,14 @@ class LocalLibraryPreferences extends ChangeNotifier {
       ? '未分类'
       : categoryAuthor(id) != null
       ? '作者 · ${categoryAuthor(id)}'
+      : id == noTag
+      ? '未标注标签'
+      : categoryTag(id) != null
+      ? '标签 · ${categoryTag(id)}'
+      : id == noSeries
+      ? '未归入系列'
+      : categorySeries(id) != null
+      ? '系列 · ${categorySeries(id)}'
       : _hasGroup(id)
       ? _groups[id]!['name'] as String
       : '全部书籍';
@@ -193,14 +252,14 @@ class LocalLibraryPreferences extends ChangeNotifier {
     selected = raw['selected'] is String ? raw['selected'] : all;
     if (selected != all &&
         selected != unfiled &&
-        categoryAuthor(selected) == null &&
+        !dynamicCategory(selected) &&
         !groups.containsKey(selected)) {
       selected = all;
     }
     shelfSelected = raw['shelfSelected'] is String ? raw['shelfSelected'] : all;
     if (shelfSelected != all &&
         shelfSelected != unfiled &&
-        categoryAuthor(shelfSelected) == null &&
+        !dynamicCategory(shelfSelected) &&
         !groups.containsKey(shelfSelected)) {
       shelfSelected = all;
     }
@@ -213,7 +272,7 @@ class LocalLibraryPreferences extends ChangeNotifier {
     final category = value.category;
     return category == all ||
             category == unfiled ||
-            categoryAuthor(category) != null ||
+            dynamicCategory(category) ||
             _hasGroup(category)
         ? value
         : value.copyWith(category: all);
@@ -336,7 +395,7 @@ class LocalLibraryPreferences extends ChangeNotifier {
     bool visible(String id) =>
         id == all ||
         id == unfiled ||
-        categoryAuthor(id) != null ||
+        dynamicCategory(id) ||
         valid['groups'][id] != null && valid['groups'][id]['deleted'] != true;
     record['organization'] = valid;
     record['selected'] = visible(selected) ? selected : all;
@@ -481,7 +540,7 @@ class LocalLibraryPreferences extends ChangeNotifier {
   Future<void> select(String value, {bool shelf = false}) {
     if (value != all &&
         value != unfiled &&
-        categoryAuthor(value) == null &&
+        !dynamicCategory(value) &&
         !groups.containsKey(value)) {
       throw const FormatException('分类不存在');
     }
@@ -590,6 +649,7 @@ class LocalLibraryPreferences extends ChangeNotifier {
     String query = '',
     int Function(int)? readAt,
     int Function(int)? addedAt,
+    String? Function(int)? seriesKeyFor,
   }) {
     final pattern = BookSearch(query);
     final result = books.where((book) {
@@ -597,7 +657,13 @@ class LocalLibraryPreferences extends ChangeNotifier {
       // With no query/filter, the book metadata needs no matching work.
       if (selected == all && pattern.terms.isEmpty) return true;
       final group = groupOf(book.id);
-      if (!matchesCategory(book, selected)) return false;
+      if (!matchesCategory(
+        book,
+        selected,
+        seriesKey: seriesKeyFor?.call(book.id),
+      )) {
+        return false;
+      }
       return pattern.terms.isEmpty ||
           pattern.matches(
             title: book.title,

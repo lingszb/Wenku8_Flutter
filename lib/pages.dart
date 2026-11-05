@@ -36,6 +36,7 @@ import 'book_collection_region_toolbar.dart';
 import 'book_collection_grid.dart';
 import 'book_grid_density.dart';
 import 'book_categories.dart';
+import 'book_dynamic_categories.dart';
 import 'bookshelf_scope.dart';
 import 'book_source_badge.dart';
 import 'book_search.dart';
@@ -1498,7 +1499,14 @@ class _ShelfPageState extends State<ShelfPage>
   bool _matches(int id, String term) {
     if (_cacheOnly && _offline?.availableOffline(id) != true) return false;
     final book = _known(id);
-    if (!bookshelfMatchesCategory(id, state, book: book)) return false;
+    if (!bookshelfMatchesCategory(
+      id,
+      state,
+      book: book,
+      localBooks: _offline?.local,
+    )) {
+      return false;
+    }
     if (term.isNotEmpty &&
         !'$id ${book?.title ?? ''} ${book?.author ?? ''}'
             .toLowerCase()
@@ -1686,6 +1694,7 @@ class _ShelfPageState extends State<ShelfPage>
                       state,
                       book: _known(id),
                       category: contentCategory,
+                      localBooks: _offline?.local,
                     ) &&
                     shelfContentMatchesReading(
                       id,
@@ -1713,35 +1722,37 @@ class _ShelfPageState extends State<ShelfPage>
 
   Map<String, String> _buildShelfContentCategories() {
     final organization = state.organization;
-    final authors =
-        bookshelfIds(
-              state,
-              _offline,
-              readableOnly: _cacheOnly,
-              filterSource: false,
-              filterCategory: false,
-            )
-            .map(_known)
-            .whereType<Novel>()
-            .map((book) => LocalLibraryPreferences.authorName(book.author))
-            .toSet()
-            .toList()
-          ..sort();
-    return {
+    final books = bookshelfIds(
+      state,
+      _offline,
+      readableOnly: _cacheOnly,
+      filterSource: false,
+      filterCategory: false,
+    ).map(_known).whereType<Novel>().toList();
+    final categories = <String, String>{
       LocalLibraryPreferences.all: '全部书籍',
       LocalLibraryPreferences.unfiled: '未分类',
       ...organization.groups,
-      for (final author in authors)
-        LocalLibraryPreferences.authorCategory(author): '作者 · $author',
-      if (shelfContentDynamicCategoryLabel(state.shelfContent.category)
-          case final label?)
-        if (!authors.any(
-          (author) =>
-              LocalLibraryPreferences.authorCategory(author) ==
-              state.shelfContent.category,
-        ))
-          state.shelfContent.category: '$label（暂无匹配）',
+      for (final entry in BookDynamicCategories.authors(books).entries)
+        entry.key: '作者 · ${entry.value.label}',
+      for (final entry in BookDynamicCategories.tags(books).entries)
+        entry.key: entry.key == LocalLibraryPreferences.noTag
+            ? entry.value.label
+            : '标签 · ${entry.value.label}',
+      for (final entry in BookDynamicCategories.series(
+        books,
+        local: _offline?.local,
+      ).entries)
+        entry.key: entry.key == LocalLibraryPreferences.noSeries
+            ? entry.value.label
+            : '系列 · ${entry.value.label}',
     };
+    final selected = state.shelfContent.category;
+    if (LocalLibraryPreferences.dynamicCategory(selected) &&
+        !categories.containsKey(selected)) {
+      categories[selected] = '${organization.nameOf(selected)}（暂无匹配）';
+    }
+    return categories;
   }
 
   String get _shelfContentCategory =>
@@ -2013,6 +2024,7 @@ class _ShelfPageState extends State<ShelfPage>
       shelf: true,
       books: known,
       unknownAuthorCount: ids.length - known.length,
+      localBooks: _offline?.local,
       reduceMotion: state.reduceMotion,
     );
   }

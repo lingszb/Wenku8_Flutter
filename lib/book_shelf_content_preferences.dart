@@ -6,10 +6,14 @@ enum BookShelfContentSort { original, recentRead, recentAdded, title }
 /// Dynamic queries remain selected when the current source has no matches.
 /// Their absence is not deletion of a named organization category.
 String? shelfContentDynamicCategoryLabel(String category) {
+  if (category == '_tag_unassigned') return '未标注标签';
+  if (category == '_series_unassigned') return '未归入系列';
   final (prefix, label) = category.startsWith('_author:')
       ? ('_author:', '作者')
       : category.startsWith('_tag:')
       ? ('_tag:', '标签')
+      : category.startsWith('_series:')
+      ? ('_series:', '系列')
       : ('', '');
   if (prefix.isEmpty) return null;
   try {
