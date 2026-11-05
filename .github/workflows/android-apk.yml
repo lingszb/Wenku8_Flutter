@@ -41,12 +41,19 @@ jobs:
           flutter-version: '3.47.9'
           cache: true
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
+      # ubuntu-24.04 already provides the Android SDK and command-line tools.
+      # setup-android@v3 currently invokes the removed 'sdkmanager tools'
+      # package and fails before an app build can start.
       - name: Install Android build dependencies
+        shell: bash
         run: |
-          sdkmanager --install "platforms;android-36" "build-tools;36.0.0" "cmake;3.22.1"
+          set -euo pipefail
+          manager="$(command -v sdkmanager || true)"
+          if [[ -z "$manager" ]]; then
+            manager="$(find "$ANDROID_SDK_ROOT/cmdline-tools" -name sdkmanager -type f -print -quit)"
+          fi
+          test -x "$manager"
+          "$manager" --install "platforms;android-36" "build-tools;36.0.0" "cmake;3.22.1"
 
       - name: Toolchain information
         run: |
