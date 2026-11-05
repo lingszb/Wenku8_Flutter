@@ -112,10 +112,21 @@ class BookDocuments internal constructor(
                 try { @Suppress("DEPRECATION") activity.startActivityForResult(intent, REQUEST) }
                 catch (_: Exception) { pending = null; result.error("picker", "系统文件选择器不可用", null) }
             }
-            "selectAllScan", "selectScanFolder" -> {
-                result.error("unsupported", "当前源码版本暂不支持文件夹扫描，请直接选择 TXT 或 EPUB 文件", null)
+            "selectAllScan" -> {
+                if (pending != null) { result.error("busy", "请先完成当前文件选择", null); return }
+                if (scanner.canReadAll()) { background(result) { scanner.selectAll() }; return }
+                pending = Pending(call.method, result)
+                try {
+                    if (Build.VERSION.SDK_INT >= 30) {
+                        val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                            Uri.parse("package:${activity.packageName}"))
+                        @Suppress("DEPRECATION") activity.startActivityForResult(intent, ALL_REQUEST)
+                    } else {
+                        activity.requestPermissions(arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE), ALL_REQUEST)
+                    }
+                } catch (_: Exception) { pending = null; result.error("permission", "无法打开共享存储授权，请改为选择文件夹", null) }
             }
-            "pickBook", "pickBooks", "pickDictionaryFiles", "pickTextReference", "pickOriginalReference", "pickFont", "pickImage", "openSync", "createSync" -> {
+            "selectScanFolder", "pickBook", "pickBooks", "pickDictionaryFiles", "pickTextReference", "pickOriginalReference", "pickFont", "pickImage", "openSync", "createSync" -> {
                 if (pending != null) { result.error("busy", "请先完成当前文件选择", null); return }
                 val create = call.method == "createSync"
                 val folder = call.method == "selectScanFolder"
@@ -126,6 +137,7 @@ class BookDocuments internal constructor(
                 val intent = Intent(if (folder) Intent.ACTION_OPEN_DOCUMENT_TREE else if (create) Intent.ACTION_CREATE_DOCUMENT else if ((choosingBooks && !linkText) || choosingImage || choosingDictionaries) Intent.ACTION_GET_CONTENT else Intent.ACTION_OPEN_DOCUMENT).apply {
                     if (!folder) { addCategory(Intent.CATEGORY_OPENABLE); type = "*/*" }
                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+                    if (folder) addFlags(Intent.FLAG_GRANT_PREFIX_URI_PERMISSION)
                     if (!folder && call.method != "pickFont" && !choosingImage && !choosingDictionaries && !linkText) addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
                     if (choosingImage) type = "image/*"
                     if (create) { type = "application/octet-stream"; putExtra(Intent.EXTRA_TITLE, "文库同步.wenku8sync") }
@@ -148,7 +160,7 @@ class BookDocuments internal constructor(
             "scanFormats" -> background(result) { scanner.formats().toList() }
             "setScanFormats" -> background(result) { scanner.setFormats(call.argument<List<String>>("extensions") ?: emptyList()); null }
             "stageScanBook" -> background(result) { scanner.stage(call.argument<String>("token") ?: "", importRoot, ::copy) }
-            "linkScanBook" -> background(result) { scanner.link(call.argument<String>("token") ?: "", links, importRoot, ::copy) }
+            "linkScanBook" -> background(result) { scanner.link(call.argument<String>("token") ?: "", links) }
             "inspectLinkedText" -> background(result, linked = true) { links.inspect(call.argument<String>("reference") ?: "", call.argument<String>("encoding") ?: "auto") }
             "readLinkedText" -> background(result, linked = true) { links.block(call.argument<String>("reference") ?: "", call.argument<String>("encoding") ?: "UTF-8",
                 call.argument<Number>("offset")!!.toLong(), call.argument<Number>("size")!!.toLong(), call.argument<Number>("modified")!!.toLong()) }

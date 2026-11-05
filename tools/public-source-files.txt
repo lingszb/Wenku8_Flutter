@@ -1034,3 +1034,4 @@ test/book_search_test.dart
 tools/sign_fork_release.py
 test/app_search_field_test.dart
 test/fork_release_update_test.dart
+test/local_scan_test.dart

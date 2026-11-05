@@ -4,8 +4,8 @@ import 'local_import_batch.dart';
 
 /// Scans the already-selected snapshot and imports the requested tokens.
 ///
-/// Desktop uses this for a one-shot folder import; the mobile build additionally
-/// supports automatic scans through the same contract.
+/// Discovery never imports automatically; only the explicitly selected tokens
+/// reach the existing importer, and failed books remain eligible for retry.
 Future<LocalScanResult> scanLocalBooks({
   required BookDocuments documents,
   required BookScanSnapshot snapshot,
