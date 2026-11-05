@@ -1030,3 +1030,7 @@ tools/update-mirror/index.mjs
 tools/update-mirror/worker.mjs
 tools/update-mirror/wrangler.jsonc
 test/book_search_test.dart
+.github/workflows/fork-release.yml
+tools/sign_fork_release.py
+test/app_search_field_test.dart
+test/fork_release_update_test.dart

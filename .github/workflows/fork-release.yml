@@ -1,0 +1,149 @@
+name: Android Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Validate and build unsigned Release
+    if: github.event_name == 'push' || github.ref == 'refs/heads/master'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    outputs:
+      version: ${{ steps.metadata.outputs.version }}
+      build: ${{ steps.metadata.outputs.build }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Validate version and protected source
+        id: metadata
+        env:
+          EVENT: ${{ github.event_name }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/master
+          python3 tools/check_public_source.py --revision "$GITHUB_SHA"
+          if [[ "$EVENT" == push ]]; then
+            python3 tools/prepare_release.py --tag "$RELEASE_TAG" --notes build/release-notes.md --github-output "$GITHUB_OUTPUT"
+          else
+            python3 tools/prepare_release.py --notes build/release-notes.md --github-output "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: '3.47.9'
+          cache: true
+      - name: Prepare Android SDK and missing Wrapper
+        shell: bash
+        run: |
+          set -euo pipefail
+          manager="$(command -v sdkmanager || true)"
+          if [[ -z "$manager" ]]; then
+            manager="$(find "$ANDROID_SDK_ROOT/cmdline-tools" -name sdkmanager -type f -print -quit)"
+          fi
+          "$manager" --install "platforms;android-36" "build-tools;36.0.0" "cmake;3.22.1"
+          if [[ ! -f android/gradlew || ! -f android/gradle/wrapper/gradle-wrapper.jar ]]; then
+            seed="$(mktemp -d)"
+            trap 'rm -rf "$seed"' EXIT
+            flutter create --platforms=android --project-name release_wrapper_seed --no-pub "$seed/seed"
+            install -m 0755 "$seed/seed/android/gradlew" android/gradlew
+            install -m 0644 "$seed/seed/android/gradlew.bat" android/gradlew.bat
+            install -m 0644 "$seed/seed/android/gradle/wrapper/gradle-wrapper.jar" android/gradle/wrapper/gradle-wrapper.jar
+          fi
+          chmod +x android/gradlew
+      - run: flutter pub get
+      - run: flutter analyze lib test --no-pub --no-fatal-infos
+      - run: flutter test --no-pub
+      - name: Build unsigned fork Release
+        env:
+          ORG_GRADLE_PROJECT_wenkuForkDistribution: 'true'
+          ORG_GRADLE_PROJECT_wenkuUnsignedRelease: 'true'
+        run: flutter build apk --release --target-platform android-arm64 --no-pub
+      - uses: actions/upload-artifact@v4
+        with:
+          name: unsigned-release-${{ github.run_id }}
+          path: |
+            build/app/outputs/flutter-apk/app-release.apk
+            build/release-notes.md
+          if-no-files-found: error
+          retention-days: 1
+
+  sign:
+    name: Sign and verify fork APK
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: android-release
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: actions/download-artifact@v4
+        with:
+          name: unsigned-release-${{ github.run_id }}
+          path: unsigned
+      - name: Ensure signing tools
+        run: sdkmanager --install "build-tools;36.0.0"
+      - name: Sign, verify identity and calculate checksum
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_SIGNING_CERT_SHA256: ${{ vars.ANDROID_SIGNING_CERT_SHA256 }}
+          RELEASE_VERSION: ${{ needs.build.outputs.version }}
+          RELEASE_BUILD: ${{ needs.build.outputs.build }}
+        run: python3 tools/sign_fork_release.py --input unsigned/app/outputs/flutter-apk/app-release.apk --output signed
+      - name: Copy reviewed release notes
+        run: cp unsigned/release-notes.md signed/release-notes.md
+      - uses: actions/upload-artifact@v4
+        with:
+          name: local-reader-signed-release-${{ github.run_number }}
+          path: signed/
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    name: Publish GitHub Release
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: [build, sign]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: local-reader-signed-release-${{ github.run_number }}
+          path: signed
+      - name: Publish immutable version assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release create "$RELEASE_TAG" --verify-tag --title "$RELEASE_TAG" \
+            --notes-file signed/release-notes.md signed/*.apk signed/SHA256SUMS.txt signed/signing-certificate-sha256.txt

@@ -132,6 +132,7 @@ key.properties
 !/tools/export_icon_studio.dart
 !/tools/prepare_release.py
 !/tools/sign_distribution.py
+!/tools/sign_fork_release.py
 !/tools/test_prepare_release.py
 !/tools/check_public_source.py
 !/tools/build_project_site.py
@@ -150,6 +151,8 @@ key.properties
 # Tests and device acceptance material remain in the private development tree.
 /test/*
 !/test/book_search_test.dart
+!/test/app_search_field_test.dart
+!/test/fork_release_update_test.dart
 /integration_test/
 /test_driver/
 /android/app/src/test/

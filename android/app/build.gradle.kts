@@ -12,6 +12,8 @@ val releaseKeys = Properties().apply {
     if (releaseKeyFile.isFile) releaseKeyFile.inputStream().use { load(it) }
 }
 val readerPreview = providers.gradleProperty("wenkuReaderPreview").orNull == "true"
+val forkDistribution = providers.gradleProperty("wenkuForkDistribution").orNull == "true"
+val unsignedRelease = providers.gradleProperty("wenkuUnsignedRelease").orNull == "true"
 
 android {
     namespace = "org.mewx.wenku8_flutter"
@@ -30,12 +32,14 @@ android {
 
     defaultConfig {
         // Public source previews must not replace an installed distribution.
-        applicationId = "org.mewx.wenku8_flutter.source_preview"
+        applicationId = if (forkDistribution) "io.github.lingszb.wenku8.localreader"
+            else "org.mewx.wenku8_flutter.source_preview"
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
-        manifestPlaceholders["wenkuAppLabel"] = "轻小说文库 · 源码预览"
+        manifestPlaceholders["wenkuAppLabel"] = if (forkDistribution)
+            "轻小说文库 · 本地阅读" else "轻小说文库 · 源码预览"
         // AGP otherwise builds upstream desktop utilities too, including the
         // DRM tool whose encryption code is intentionally disabled in this app.
         externalNativeBuild.cmake.targets.addAll(listOf("mobi", "wenku_mobi"))
@@ -64,7 +68,7 @@ android {
             }
             // Local previews remain install-compatible. Public distributions
             // use an owner's untracked key.properties, never an embedded key.
-            signingConfig = signingConfigs.getByName(
+            signingConfig = if (unsignedRelease) null else signingConfigs.getByName(
                 if (releaseKeyFile.isFile && !readerPreview) "distribution" else "debug"
             )
         }
