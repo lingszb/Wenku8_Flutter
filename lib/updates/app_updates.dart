@@ -15,7 +15,7 @@ const officialUpdateRepository = 'mikufoxxx/Wenku8_Flutter';
 const updateMirrorOrigin = 'https://git.3952039.xyz';
 const updateRepository = String.fromEnvironment(
   'UPDATE_REPOSITORY',
-  defaultValue: officialUpdateRepository,
+  defaultValue: 'lingszb/Wenku8_Flutter',
 );
 const currentAppVersion = '0.5.6';
 const currentAppBuild = 2277;

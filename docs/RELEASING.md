@@ -1,19 +1,9 @@
-# 源码快照与安装包
+# 当前 fork 的 Android 发布
 
-使用应用请下载 [GitHub Releases](https://github.com/mikufoxxx/Wenku8_Flutter/releases/latest) 中适合设备的安装包。Android 使用签名 APK，iOS 与 HarmonyOS 的未签名包需自行签名。
+本 fork 的开发、PR 门禁、Debug 测试包、独立证书、Tag 发布和回滚限制统一见 [CI/CD 项目管理说明](CI_CD.md)。
 
-本仓库是部分实现的参考快照，保留了一些未提供模块的引用，不能独立构建或复现正式安装包。GitHub 自动生成的 Source code ZIP／tar.gz 是此快照的压缩文件，不是安装包。发行版功能以实际安装包及发布说明为准。
+安装包从 [当前 fork 的 GitHub Releases](https://github.com/lingszb/Wenku8_Flutter/releases) 获取；Release 文件尚未发布时，请使用经过验证的 Actions Artifact，不将 Source code ZIP 当作 APK。
 
-此 fork 已补齐 Android 最小源码预览构建所需接口，构建方式和功能限制见 [Android 最小源码构建](SOURCE_BUILD.md)。该预览不等同于上游正式发行版。
+网站部署和上游专属签名 Action 已禁用。新 Android Release 工作流先验证与构建，再使用 fork 自己的证书签名；只有版本 Tag 事件公开发布，手动运行只生成验证产物。
 
-## 文件检查
-
-```sh
-python3 tools/check_public_source.py
-```
-
-该检查验证公开文件清单及已识别的敏感内容，不是 Flutter 编译或运行验证。公开 CI 只执行此检查，不创建、删除或更新 Release 和安装包。
-
-## 许可
-
-保留 LICENSE、NOTICE、assets/licenses/ 和第三方组件的声明。公开文件仍遵循对应许可；部分参考快照不等同于正式二进制的完整对应源码。
+许可证、NOTICE、assets/licenses/ 与第三方组件声明继续保留。本地源码构建和未实现功能边界见 [Android 源码构建说明](SOURCE_BUILD.md)。
