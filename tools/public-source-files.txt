@@ -1,4 +1,5 @@
 .githooks/pre-push
+.github/workflows/android-apk.yml
 .github/workflows/flutter-ci.yml
 .github/workflows/project-pages.yml
 .github/workflows/sign-distribution.yml
