@@ -635,6 +635,13 @@ class LocalBookImporter extends ChangeNotifier {
       }
     } finally {
       await releaseStaging();
+      if (fromScan) {
+        try {
+          await documents.finishBookScan();
+        } catch (_) {
+          // Closing a page must not hide an already committed import.
+        }
+      }
       busy = false;
       if (fromScan) _scanning = false;
       progress = null;

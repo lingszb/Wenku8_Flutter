@@ -49,6 +49,8 @@ class LocalScanResult {
       '发现 $total 本',
       if (report.added > 0) '导入 ${report.added} 本',
       if (report.existing > 0) '已存在 ${report.existing} 本',
+      if (unchanged > 0) '未变化 $unchanged 本',
+      if (report.failures.isNotEmpty) '失败 ${report.failures.length} 本',
       if (pending > 0) '待确认 $pending 本',
       if (warnings.isNotEmpty) '警告 ${warnings.length} 条',
     ];

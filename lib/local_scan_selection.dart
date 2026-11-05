@@ -45,6 +45,11 @@ class _LocalScanSelectionState extends State<LocalScanSelection> {
               return CheckboxListTile(
                 value: _selected.contains(book.token),
                 title: Text(book.name),
+                subtitle:
+                    widget.snapshot.details[book.token]?.folder.isNotEmpty ==
+                        true
+                    ? Text(widget.snapshot.details[book.token]!.folder)
+                    : null,
                 onChanged: (value) => setState(() {
                   if (value == true) {
                     _selected.add(book.token);

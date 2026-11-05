@@ -153,6 +153,7 @@ key.properties
 !/test/book_search_test.dart
 !/test/app_search_field_test.dart
 !/test/fork_release_update_test.dart
+!/test/local_scan_test.dart
 /integration_test/
 /test_driver/
 /android/app/src/test/
