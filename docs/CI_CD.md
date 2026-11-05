@@ -12,7 +12,7 @@
 | `.github/workflows/project-pages.yml` | 构建并部署项目网页 | **不能** |
 | `.github/workflows/sign-distribution.yml` | 使用上游作者的密钥，对已审核发行包进行签名；有 `github.repository == 'mikufoxxx/Wenku8_Flutter'` 限制 | **不能**，Fork 无法直接使用 |
 
-本 Fork 的 `docs/LOCAL_READER_REMOVAL.md` 记载了 Android **x86_64 Debug 模拟器**成功构建/安装与 TXT、EPUB 基础验收；尚未建立云端 ARM64 构建成功记录。不要把上游绿勾、源码检查绿勾或本地模拟器通过等同于 ARM64 Release 成功。
+本 Fork 的 `docs/LOCAL_READER_REMOVAL.md` 记载了 Android **x86_64 Debug 模拟器**成功构建/安装与 TXT、EPUB 基础验收；当前提交 `2157a71` 已有[云端 ARM64 Debug 成功运行](https://github.com/lingszb/Wenku8_Flutter/actions/runs/41961796954)。不要把上游绿勾、源码检查绿勾或本地模拟器通过等同于 ARM64 Release 成功。
 
 ## 2. 新增流水线
 
@@ -22,12 +22,12 @@
 - **运行环境**：`ubuntu-24.04`、JDK 17、Flutter 3.47.9（Dart 3.13.7）、Android SDK 36；Android Gradle Plugin 与 Kotlin Plugin 依赖仓库本身的 `android/settings.gradle.kts`（当前 AGP 8.11.1、Kotlin 2.2.20）。
 - **第一道门**：运行已有 `tools/check_public_source.py`，避免偷偷加入上游限制发布的实现或本地密钥。
 - **SDK 初始化**：使用 GitHub Ubuntu Runner 预装的 Android SDK 命令行工具安装 API 36、Build Tools 36 与 CMake 3.22.1。避免使用会调用已删除 `sdkmanager tools` 包的 `android-actions/setup-android@v3`（首次 Run 曾在此处失败）。
-- **静态检查**：`flutter pub get`，`flutter analyze lib --no-fatal-infos`。该命令不会忽略 error 或 warning，但允许已有 deprecated info。
+- **静态检查**：`flutter pub get`，`flutter analyze lib test --no-pub --no-fatal-infos`。该命令不会忽略 error 或 warning，但允许已有 deprecated info。
 - **从干净源码恢复 Gradle Wrapper**：公开快照只有 `android/gradle/wrapper/gradle-wrapper.properties`，没有 `gradlew`、`gradlew.bat`、`gradle-wrapper.jar`。CI 使用**已固定版本的 Flutter SDK**在临时目录生成 Android 模板，复制这三个文件到原项目，并保留原来的 Gradle 8.14 配置与 SHA-256 校验。绝不覆盖原 `android/build.gradle.kts` 或 `android/app/build.gradle.kts`。
 - **构建门**：`flutter build apk --debug --target-platform android-arm64 --no-pub`，要求 APK 文件存在且非空。
 - **交付**：计算 APK SHA-256，在任务摘要输出哈希，使用 `actions/upload-artifact@v4` 保存 `app-debug.apk` 与 `apk-sha256.txt`，保留 14 天。
 
-**注意：** 以上为工作流的实现目标。首条工作流真正成功之前，不能写“CI 已验证 APK 可构建”。如果 GitHub Actions 被禁用，应先在 Fork 的 Actions 页面启用。
+当前 ARM64 Debug 构建已有成功记录；新增门禁的实际验证应以对应 PR 的四项检查结果为准。
 
 ### Gradle Wrapper 特殊说明
 
@@ -66,7 +66,7 @@ adb shell pm list packages | findstr source_preview
 ```powershell
 flutter --version
 flutter pub get
-flutter analyze lib --no-fatal-infos
+flutter analyze lib test --no-pub --no-fatal-infos
 flutter build apk --debug --target-platform android-arm64 --no-pub
 ```
 
@@ -78,9 +78,9 @@ flutter build apk --debug --target-platform android-arm64 --no-pub
 | --- | --- |
 | 公开源码策略检查 | 是 |
 | Flutter/Dart 静态分析 | 是 |
-| 干净 Runner 的 Android ARM64 Debug 编译 | 是，**待首次运行证明** |
-| Debug APK Artifact 下载与校验值 | 是，**待首次运行产出** |
-| 自动化 `flutter test` | 否；当前公开 Fork 未包含 `test/`，原公开源码策略排除测试目录 |
+| 干净 Runner 的 Android ARM64 Debug 编译 | 是，已有成功运行 |
+| Debug APK Artifact 下载与校验值 | 是，已有成功产出 |
+| 自动化 `flutter test` | 是；运行 `flutter test --no-pub`，当前包含本地检索单元回归，尚无 Widget/E2E 覆盖 |
 | 真机 UI、性能和长时间稳定性 | 否；需单独设备验收 |
 | 生产 Release 签名、AAB、商店/Release 发布 | 否 |
 | iOS、HarmonyOS 打包 | 否 |
@@ -94,7 +94,20 @@ flutter build apk --debug --target-platform android-arm64 --no-pub
 
 上游签名 workflow 明确限定原作者仓库，不要试图直接在 Fork 复用原作者的私钥或发行身份。
 
-## 6. 外部文档
+## 6. master 合并门禁
+
+`master` 使用 GitHub 分支保护，以下四项 GitHub Actions 检查必须成功，且 PR 分支必须与最新目标分支同步：
+
+- `Public source policy`：检查精确提交的公开源码与清单。
+- `Static analysis`：`flutter analyze lib test --no-pub --no-fatal-infos`。
+- `Flutter tests`：`flutter test --no-pub`。无测试套件或测试失败时不得视为通过。
+- `Android ARM64 debug build`：依赖分析与测试成功后构建 APK、校验产物并上传。
+
+检查绑定 GitHub Actions App，管理员同样受保护；通过 PR 合并，不额外要求审批人数。禁止强推和删除 `master`。这些是仓库远端设置，工作流文件本身不能替代分支保护；新 fork 需要另行配置。
+
+公开源码策略仅允许清单登记的 `test/**/*_test.dart`；未登记测试、原生私有测试材料与其他受限内容仍被拒绝。新增公开测试时同时更新 `tools/public-source-files.txt`。当前测试只验证本地检索，不代表导入、阅读或设备 E2E 已自动化。
+
+## 7. 外部文档
 
 - [Flutter 官方 Android 构建/ABI 说明](https://docs.flutter.dev/deployment/android)
 - [Flutter 官方持续交付说明](https://docs.flutter.dev/deployment/cd)
