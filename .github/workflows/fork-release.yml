@@ -104,7 +104,15 @@ jobs:
           name: unsigned-release-${{ github.run_id }}
           path: unsigned
       - name: Ensure signing tools
-        run: sdkmanager --install "build-tools;36.0.0"
+        shell: bash
+        run: |
+          set -euo pipefail
+          manager="$(command -v sdkmanager || true)"
+          if [[ -z "$manager" ]]; then
+            manager="$(find "$ANDROID_SDK_ROOT/cmdline-tools" -name sdkmanager -type f -print -quit)"
+          fi
+          test -x "$manager"
+          "$manager" --install "build-tools;36.0.0"
       - name: Sign, verify identity and calculate checksum
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
