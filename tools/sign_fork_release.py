@@ -31,7 +31,9 @@ def main() -> None:
     if not re.fullmatch(r'[0-9a-f]{64}', certificate):
         raise ValueError('Missing or invalid pinned signing certificate')
     tools = Path(os.environ['ANDROID_HOME']) / 'build-tools' / '36.0.0'
-    badging = command([str(tools / 'aapt'), 'dump', 'badging', str(args.input)], 'Inspect APK')
+    aapt = tools / ('aapt.exe' if os.name == 'nt' else 'aapt')
+    signer = tools / ('apksigner.bat' if os.name == 'nt' else 'apksigner')
+    badging = command([str(aapt), 'dump', 'badging', str(args.input)], 'Inspect APK')
     identity = f"name='io.github.lingszb.wenku8.localreader' versionCode='{build}' versionName='{version}'"
     if identity not in badging or 'application-debuggable' in badging or "native-code: 'arm64-v8a'" not in badging:
         raise ValueError('APK package, version, architecture or Release mode mismatch')
@@ -42,12 +44,12 @@ def main() -> None:
         key.write_bytes(base64.b64decode(os.environ['ANDROID_KEYSTORE_BASE64'], validate=True))
         key.chmod(0o600)
         command([
-            str(tools / 'apksigner'), 'sign', '--v4-signing-enabled', 'false', '--ks', str(key),
+            str(signer), 'sign', '--v4-signing-enabled', 'false', '--ks', str(key),
             '--ks-key-alias', os.environ['ANDROID_KEY_ALIAS'],
             '--ks-pass', 'env:ANDROID_STORE_PASSWORD', '--key-pass', 'env:ANDROID_KEY_PASSWORD',
             '--out', str(apk), str(args.input),
         ], 'Sign APK')
-    verification = command([str(tools / 'apksigner'), 'verify', '--verbose', '--print-certs', str(apk)], 'Verify APK')
+    verification = command([str(signer), 'verify', '--verbose', '--print-certs', str(apk)], 'Verify APK')
     found = re.findall(r'certificate SHA-256 digest: ([0-9a-fA-F]{64})', verification)
     if len(found) != 1 or found[0].lower() != certificate:
         apk.unlink()
