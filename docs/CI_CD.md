@@ -21,6 +21,7 @@
 - **触发**：PR、`master` push、Actions 页面手动触发 `workflow_dispatch`。
 - **运行环境**：`ubuntu-24.04`、JDK 17、Flutter 3.47.9（Dart 3.13.7）、Android SDK 36；Android Gradle Plugin 与 Kotlin Plugin 依赖仓库本身的 `android/settings.gradle.kts`（当前 AGP 8.11.1、Kotlin 2.2.20）。
 - **第一道门**：运行已有 `tools/check_public_source.py`，避免偷偷加入上游限制发布的实现或本地密钥。
+- **SDK 初始化**：使用 GitHub Ubuntu Runner 预装的 Android SDK 命令行工具安装 API 36、Build Tools 36 与 CMake 3.22.1。避免使用会调用已删除 `sdkmanager tools` 包的 `android-actions/setup-android@v3`（首次 Run 曾在此处失败）。
 - **静态检查**：`flutter pub get`，`flutter analyze lib --no-fatal-infos`。该命令不会忽略 error 或 warning，但允许已有 deprecated info。
 - **从干净源码恢复 Gradle Wrapper**：公开快照只有 `android/gradle/wrapper/gradle-wrapper.properties`，没有 `gradlew`、`gradlew.bat`、`gradle-wrapper.jar`。CI 使用**已固定版本的 Flutter SDK**在临时目录生成 Android 模板，复制这三个文件到原项目，并保留原来的 Gradle 8.14 配置与 SHA-256 校验。绝不覆盖原 `android/build.gradle.kts` 或 `android/app/build.gradle.kts`。
 - **构建门**：`flutter build apk --debug --target-platform android-arm64 --no-pub`，要求 APK 文件存在且非空。
