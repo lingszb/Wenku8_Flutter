@@ -400,6 +400,7 @@ lib/blocked_tags.dart
 lib/blocked_tags_controls.dart
 lib/blocked_tags_editor.dart
 lib/book_categories.dart
+lib/book_dynamic_categories.dart
 lib/book_collection_grid.dart
 lib/book_collection_layout.dart
 lib/book_collection_mode.dart
