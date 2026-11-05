@@ -47,6 +47,10 @@ bool bookshelfMatchesCategory(
   final resolved = book ?? state.cachedNovel(id);
   // A missing legacy snapshot cannot satisfy metadata-based categories.
   if (resolved == null) {
+    // Keep the original unknown-author fallback for unresolved saved books.
+    if (LocalLibraryPreferences.categoryAuthor(selected) case final author?) {
+      return author == '未知作者';
+    }
     return selected == LocalLibraryPreferences.all ||
         (selected == LocalLibraryPreferences.unfiled ||
             state.organization.groups.containsKey(selected)) &&
