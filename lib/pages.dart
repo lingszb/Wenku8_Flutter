@@ -1499,7 +1499,14 @@ class _ShelfPageState extends State<ShelfPage>
   bool _matches(int id, String term) {
     if (_cacheOnly && _offline?.availableOffline(id) != true) return false;
     final book = _known(id);
-    if (!bookshelfMatchesCategory(id, state, book: book)) return false;
+    if (!bookshelfMatchesCategory(
+      id,
+      state,
+      book: book,
+      localBooks: _offline?.local,
+    )) {
+      return false;
+    }
     if (term.isNotEmpty &&
         !'$id ${book?.title ?? ''} ${book?.author ?? ''}'
             .toLowerCase()
