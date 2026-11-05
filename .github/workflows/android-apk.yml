@@ -1,0 +1,119 @@
+name: Android APK build
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-apk-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  android-arm64-debug:
+    name: Analyze and build ARM64 debug APK
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Validate committed public source
+        run: python3 tools/check_public_source.py --revision "$(git rev-parse HEAD)"
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Flutter 3.47.9
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: '3.47.9'
+          cache: true
+
+      # ubuntu-24.04 already provides the Android SDK and command-line tools.
+      # setup-android@v3 currently invokes the removed 'sdkmanager tools'
+      # package and fails before an app build can start.
+      - name: Install Android build dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          manager="$(command -v sdkmanager || true)"
+          if [[ -z "$manager" ]]; then
+            manager="$(find "$ANDROID_SDK_ROOT/cmdline-tools" -name sdkmanager -type f -print -quit)"
+          fi
+          test -x "$manager"
+          "$manager" --install "platforms;android-36" "build-tools;36.0.0" "cmake;3.22.1"
+
+      - name: Toolchain information
+        run: |
+          flutter --version
+          java -version
+          df -h .
+
+      - name: Fetch Flutter dependencies
+        run: flutter pub get
+
+      - name: Static analysis
+        run: flutter analyze lib --no-fatal-infos
+
+      # The public source snapshot tracks wrapper.properties but omits
+      # gradlew, gradlew.bat and gradle-wrapper.jar. Generate those files from
+      # the pinned Flutter SDK template without replacing Android project files
+      # or the repository's Gradle 8.14 wrapper.properties.
+      - name: Restore missing Gradle wrapper files
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -f android/gradlew && -f android/gradle/wrapper/gradle-wrapper.jar ]]; then
+            chmod +x android/gradlew
+            exit 0
+          fi
+          seed="$(mktemp -d)"
+          trap 'rm -rf "$seed"' EXIT
+          flutter create --platforms=android --project-name ci_wrapper_seed --no-pub "$seed/seed"
+          install -m 0755 "$seed/seed/android/gradlew" android/gradlew
+          install -m 0644 "$seed/seed/android/gradlew.bat" android/gradlew.bat
+          install -m 0644 "$seed/seed/android/gradle/wrapper/gradle-wrapper.jar" android/gradle/wrapper/gradle-wrapper.jar
+          test -x android/gradlew
+          test -s android/gradle/wrapper/gradle-wrapper.jar
+          grep -F 'gradle-8.14-all.zip' android/gradle/wrapper/gradle-wrapper.properties
+
+      - name: Build Android ARM64 debug APK
+        run: flutter build apk --debug --target-platform android-arm64 --no-pub
+
+      - name: Verify APK output and SHA-256
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk=build/app/outputs/flutter-apk/app-debug.apk
+          test -s "$apk"
+          sha256sum "$apk" | tee build/apk-sha256.txt
+          {
+            echo "### Android ARM64 debug APK"
+            echo "Source commit: \`$GITHUB_SHA\`"
+            echo ""
+            echo "APK SHA-256: \`$(cut -d' ' -f1 build/apk-sha256.txt)\`"
+            echo ""
+            echo "This is a debug-signed test APK, not a production release."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload installable APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: local-reader-arm64-debug-${{ github.run_number }}
+          path: |
+            build/app/outputs/flutter-apk/app-debug.apk
+            build/apk-sha256.txt
+          if-no-files-found: error
+          retention-days: 14

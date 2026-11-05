@@ -1,4 +1,5 @@
 .githooks/pre-push
+.github/workflows/android-apk.yml
 .github/workflows/flutter-ci.yml
 .github/workflows/project-pages.yml
 .github/workflows/sign-distribution.yml
@@ -250,6 +251,8 @@ assets/reading_art/signal-110.webp
 assets/reading_art/signal-117.png
 assets/reading_art/signal-117.webp
 assets/tokenizer/jieba-1.0.1.dgz
+docs/CI_CD.md
+docs/DESIGN.md
 docs/CLOUD_IMPORT.md
 docs/DESIGN.md
 docs/HAPTICS.md
@@ -401,6 +404,7 @@ lib/blocked_tags.dart
 lib/blocked_tags_controls.dart
 lib/blocked_tags_editor.dart
 lib/book_categories.dart
+lib/book_dynamic_categories.dart
 lib/book_collection_grid.dart
 lib/book_collection_layout.dart
 lib/book_collection_mode.dart

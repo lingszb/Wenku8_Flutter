@@ -2,6 +2,8 @@ import 'library_state.dart';
 import 'offline_repository.dart';
 import 'local_library_preferences.dart';
 import 'catalog.dart';
+import 'local_books.dart';
+import 'book_dynamic_categories.dart';
 
 /// The shelf contains saved books and, when merged, imported originals.
 /// Cached trial chapters provide offline availability, never membership.
@@ -29,6 +31,7 @@ Set<int> bookshelfIds(
                     book:
                         offline?.local?.book(id) ??
                         offline?.cache.book(id)?.novel,
+                    localBooks: offline?.local,
                   )),
         )
         .toSet();
@@ -38,16 +41,26 @@ bool bookshelfMatchesCategory(
   LibraryState state, {
   Novel? book,
   String? category,
+  LocalBookStore? localBooks,
 }) {
   final selected = category ?? state.organization.shelfSelected;
-  if (LocalLibraryPreferences.categoryAuthor(selected) case final author?) {
-    return LocalLibraryPreferences.authorName(
-          (book ?? state.cachedNovel(id))?.author ?? '',
-        ) ==
-        author;
+  final resolved = book ?? state.cachedNovel(id);
+  // A missing legacy snapshot cannot satisfy metadata-based categories.
+  if (resolved == null) {
+    // Keep the original unknown-author fallback for unresolved saved books.
+    if (LocalLibraryPreferences.categoryAuthor(selected) case final author?) {
+      return author == '未知作者';
+    }
+    return selected == LocalLibraryPreferences.all ||
+        (selected == LocalLibraryPreferences.unfiled ||
+            state.organization.groups.containsKey(selected)) &&
+            state.organization.groupOf(id) == selected;
   }
-  return selected == LocalLibraryPreferences.all ||
-      state.organization.groupOf(id) == selected;
+  return state.organization.matchesCategory(
+    resolved,
+    selected,
+    seriesKey: BookDynamicCategories.seriesKey(resolved, localBooks),
+  );
 }
 
 bool bookshelfMatchesSource(

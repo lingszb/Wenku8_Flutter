@@ -26,6 +26,7 @@ import 'local_books.dart';
 import 'local_book_importer.dart';
 import 'local_library_preferences.dart';
 import 'local_series_editor.dart';
+import 'book_dynamic_categories.dart';
 import 'local_book_removal.dart';
 import 'local_book_batch_page.dart';
 import 'pages.dart' show NovelRow;
@@ -173,41 +174,52 @@ class _LocalLibraryPageState extends State<LocalLibraryPage>
       .where((book) => widget.state.localBookVisible(book.id))
       .toList(growable: false);
 
+  /// The featured shelf and the lower index understand the same dynamic
+  /// queries; named categories continue to be user-managed assignments.
   Map<String, String> _shelfCategoryOptions(
     LocalLibraryPreferences organization,
   ) {
     if (_shelfCategories != null) return _shelfCategories!;
-    final categories = {
+    final members = _localMembership();
+    final categories = <String, String>{
       LocalLibraryPreferences.all: '全部书籍',
       LocalLibraryPreferences.unfiled: '未分类',
       ...organization.groups,
-      for (final author
-          in (_localMembership()
-              .map((book) => LocalLibraryPreferences.authorName(book.author))
-              .toSet()
-              .toList()
-            ..sort()))
-        LocalLibraryPreferences.authorCategory(author): '作者 · $author',
+      for (final entry in BookDynamicCategories.authors(members).entries)
+        entry.key: '作者 · ${entry.value.label}',
+      for (final entry in BookDynamicCategories.tags(members).entries)
+        entry.key: entry.key == LocalLibraryPreferences.noTag
+            ? entry.value.label
+            : '标签 · ${entry.value.label}',
+      for (final entry in BookDynamicCategories.series(
+        members,
+        local: widget.books,
+      ).entries)
+        entry.key: entry.key == LocalLibraryPreferences.noSeries
+            ? entry.value.label
+            : '系列 · ${entry.value.label}',
     };
-    final selected = organization.shelfContent.category;
-    final selectedAuthor = LocalLibraryPreferences.categoryAuthor(selected);
-    if (selectedAuthor != null && !categories.containsKey(selected)) {
-      categories[selected] = '作者 · $selectedAuthor（暂无匹配）';
+    for (final selected in [
+      organization.selected,
+      organization.shelfContent.category,
+    ]) {
+      if (LocalLibraryPreferences.dynamicCategory(selected) &&
+          !categories.containsKey(selected)) {
+        categories[selected] = '${organization.nameOf(selected)}（暂无匹配）';
+      }
     }
     return _shelfCategories = categories;
   }
 
   String _shelfCategory(LocalLibraryPreferences organization) {
     final requested = organization.shelfContent.category;
-    // An author is a query, not a named category that can be deleted. Keep its
-    // condition when no visible book matches instead of broadening to all books.
-    if (LocalLibraryPreferences.categoryAuthor(requested) != null) {
-      return requested;
-    }
+    // Missing dynamic results are not grounds for resetting a saved query.
+    if (LocalLibraryPreferences.dynamicCategory(requested)) return requested;
     return _shelfCategoryOptions(organization).containsKey(requested)
         ? requested
         : LocalLibraryPreferences.all;
   }
+
 
   List<Novel> _featuredBooks(
     LocalLibraryPreferences? organization,
@@ -219,7 +231,13 @@ class _LocalLibraryPageState extends State<LocalLibraryPage>
     if (_shelfBooks != null) return _shelfBooks!;
     final category = _shelfCategory(organization);
     final result = _localMembership().where((book) {
-      if (!organization.matchesCategory(book, category)) return false;
+      if (!organization.matchesCategory(
+        book,
+        category,
+        seriesKey: BookDynamicCategories.seriesKey(book, widget.books),
+      )) {
+        return false;
+      }
       return switch (preferences.readingFilter) {
         'recent' => widget.state.hasRead(book.id),
         'unread' => !widget.state.hasRead(book.id),
@@ -279,6 +297,12 @@ class _LocalLibraryPageState extends State<LocalLibraryPage>
           query: query,
           addedAt: addedAt,
           readAt: readAt,
+          seriesKeyFor: (id) {
+            final book = widget.books.book(id);
+            return book == null
+                ? null
+                : BookDynamicCategories.seriesKey(book, widget.books);
+          },
         )
         .where(
           (book) => switch (organization.readingFilter) {
@@ -577,6 +601,7 @@ class _LocalLibraryPageState extends State<LocalLibraryPage>
     books: widget.books.books.where(
       (book) => widget.state.localBookVisible(book.id),
     ),
+    localBooks: widget.books,
     reduceMotion: widget.state.reduceMotion,
   );
 
@@ -676,7 +701,10 @@ class _LocalLibraryPageState extends State<LocalLibraryPage>
     int count, {
     bool region = false,
   }) {
-    final category = organization?.nameOf(organization.selected) ?? '全部书籍';
+    final category = organization == null
+        ? '全部书籍'
+        : _shelfCategoryOptions(organization)[organization.selected] ??
+            organization.nameOf(organization.selected);
     if (region) {
       return BookCollectionRegionToolbar(
         key: const ValueKey('local-collection-region-toolbar'),
@@ -726,9 +754,12 @@ class _LocalLibraryPageState extends State<LocalLibraryPage>
       BookCollectionRegionToolbar(
         key: const ValueKey('local-shelf-region-heading'),
         title: '立体书架',
-        category: organization.shelfContent.followCollection
-            ? organization.nameOf(organization.selected)
-            : organization.nameOf(_shelfCategory(organization)),
+        category: _shelfCategoryOptions(organization)[
+                organization.shelfContent.followCollection
+                    ? organization.selected
+                    : _shelfCategory(organization)
+              ] ??
+            organization.nameOf(organization.selected),
         count: count,
         categoryKey: const ValueKey('local-shelf-category'),
         filterKey: const ValueKey('local-shelf-filter'),
