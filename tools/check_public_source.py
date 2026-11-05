@@ -75,7 +75,11 @@ def inspect(root: Path, files=None, *, require_manifest=False) -> list[str]:
             continue
         if not file.is_file():
             continue
-        if (any(part in LOCAL_ONLY_PARTS for part in relative.parts) or
+        # Reviewed Dart unit tests still pass the inventory and content checks.
+        public_dart_test = (relative.parts[0] == 'test' and
+                            file.name.endswith('_test.dart') and
+                            allowed is not None and relative.as_posix() in allowed)
+        if not public_dart_test and (any(part in LOCAL_ONLY_PARTS for part in relative.parts) or
                 file.name in LOCAL_ONLY_NAMES or file.name.startswith(('test_', '._')) or
                 re.search(r'(?:_test[.]|[.]test[.]|Tests[.]|Test[.])', file.name)):
             issues.append(f'{relative}: local-only test or development material')

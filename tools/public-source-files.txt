@@ -1019,3 +1019,4 @@ tools/update-mirror/distribution.mjs
 tools/update-mirror/index.mjs
 tools/update-mirror/worker.mjs
 tools/update-mirror/wrangler.jsonc
+test/book_search_test.dart
