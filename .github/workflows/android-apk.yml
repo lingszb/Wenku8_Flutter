@@ -14,8 +14,41 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  analyze:
+    name: Static analysis
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: '3.47.9'
+          cache: true
+      - run: flutter pub get
+      - run: flutter analyze lib test --no-pub --no-fatal-infos
+
+  test:
+    name: Flutter tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: '3.47.9'
+          cache: true
+      - run: flutter pub get
+      - run: flutter test --no-pub
+
   android-arm64-debug:
-    name: Analyze and build ARM64 debug APK
+    name: Android ARM64 debug build
+    needs: [analyze, test]
     runs-on: ubuntu-24.04
     timeout-minutes: 75
     steps:
@@ -63,9 +96,6 @@ jobs:
 
       - name: Fetch Flutter dependencies
         run: flutter pub get
-
-      - name: Static analysis
-        run: flutter analyze lib --no-fatal-infos
 
       # The public source snapshot tracks wrapper.properties but omits
       # gradlew, gradlew.bat and gradle-wrapper.jar. Generate those files from

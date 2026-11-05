@@ -148,7 +148,8 @@ key.properties
 /tools/update-mirror/public/
 
 # Tests and device acceptance material remain in the private development tree.
-/test/
+/test/*
+!/test/book_search_test.dart
 /integration_test/
 /test_driver/
 /android/app/src/test/
