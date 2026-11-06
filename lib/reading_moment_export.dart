@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 
 import 'reading_moment_content.dart';
+import 'reading_artwork.dart';
 import 'reading_keepsake_theme.dart';
 import 'reading_visual_theme.dart';
 
@@ -15,28 +16,33 @@ Future<Uint8List> renderReadingMomentPresentationPng(
   BuildContext context,
   ReadingMomentPresentation presentation,
 ) async {
-  Future<void> warm(ImageProvider provider) async {
+  Future<void> warm(ImageProvider provider, {bool optional = false}) async {
     Object? failure;
     await precacheImage(
       provider,
       context,
       onError: (error, _) => failure = error,
     );
-    if (failure != null) throw failure!;
+    if (failure != null && !optional) throw failure!;
   }
 
-  await Future.wait([
-    warm(
-      AssetImage(
+  final artwork =
+      presentation.artwork ??
+      await loadReadingArtwork(
         readingKeepsakeArt(
           presentation.theme,
           recordedAt: presentation.moment.earnedAt,
           portrait: presentation.theme == ReadingVisualTheme.shelf,
         ),
-      ),
-    ),
+        bundle: DefaultAssetBundle.of(context),
+      );
+  if (!context.mounted) throw StateError('纪念弹窗已关闭');
+  await Future.wait([
+    warm(MemoryImage(artwork.bytes)),
     if (presentation.showBookDetails && presentation.coverBytes != null)
-      warm(MemoryImage(presentation.coverBytes!)),
+      // The on-screen cover already hides undecodable optional bytes. Keep
+      // that same decision during export without suppressing layout failures.
+      warm(MemoryImage(presentation.coverBytes!), optional: true),
   ]);
   if (!context.mounted) throw StateError('纪念弹窗已关闭');
 
@@ -85,7 +91,9 @@ Future<Uint8List> renderReadingMomentPresentationPng(
                 style: theme.textTheme.bodyMedium!,
                 child: SizedBox(
                   width: canvas.width,
-                  child: ReadingMomentContent(presentation: presentation),
+                  child: ReadingMomentContent(
+                    presentation: presentation.withArtwork(artwork),
+                  ),
                 ),
               ),
             ),

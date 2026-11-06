@@ -16,6 +16,7 @@ class GlassSettingMenu<T> extends StatefulWidget {
     required this.onChanged,
     required this.reduceMotion,
     this.semanticLabel,
+    this.choose,
   });
   final IconData icon;
   final String label;
@@ -24,6 +25,9 @@ class GlassSettingMenu<T> extends StatefulWidget {
   final Map<T, String> options;
   final FutureOr<void> Function(T) onChanged;
   final bool reduceMotion;
+
+  /// Optional structured chooser; ordinary setting rows keep their flat menu.
+  final Future<T?> Function(BuildContext context)? choose;
   @override
   State<GlassSettingMenu<T>> createState() => _GlassSettingMenuState<T>();
 }
@@ -35,24 +39,26 @@ class _GlassSettingMenuState<T> extends State<GlassSettingMenu<T>> {
     if (_saving) return;
     final source = _anchor.currentContext;
     if (source == null) return;
-    final selected = await showGlassMenu<T>(
-      context: source,
-      reduceMotion: widget.reduceMotion,
-      builder: (menu) => SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            for (final (index, entry) in widget.options.entries.indexed)
-              GlassMenuItem(
-                order: index,
-                label: entry.value,
-                selected: entry.key == widget.value,
-                onPressed: () => Navigator.pop(menu, entry.key),
+    final selected = widget.choose != null
+        ? await widget.choose!(context)
+        : await showGlassMenu<T>(
+            context: source,
+            reduceMotion: widget.reduceMotion,
+            builder: (menu) => SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  for (final (index, entry) in widget.options.entries.indexed)
+                    GlassMenuItem(
+                      order: index,
+                      label: entry.value,
+                      selected: entry.key == widget.value,
+                      onPressed: () => Navigator.pop(menu, entry.key),
+                    ),
+                ],
               ),
-          ],
-        ),
-      ),
-    );
+            ),
+          );
     if (mounted && selected != null && selected != widget.value) {
       setState(() => _saving = true);
       try {

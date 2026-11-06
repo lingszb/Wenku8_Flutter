@@ -86,7 +86,10 @@ flutter:
   uses-material-design: true
   assets:
     - assets/branding/app-icon.png
-    # The public snapshot omits report artwork; previews use their color fallback.
+    - assets/report/season-spring.png
+    - assets/report/season-summer.png
+    - assets/report/season-autumn.png
+    - assets/report/season-winter.png
     - assets/fonts/OFL-BarlowCondensed.txt
     - assets/fonts/OFL-NotoSerifSC.txt
     - assets/fonts/OFL-SourceHanSerif.txt

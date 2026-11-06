@@ -135,25 +135,19 @@ key.properties
 !/tools/sign_fork_release.py
 !/tools/test_prepare_release.py
 !/tools/check_public_source.py
-!/tools/build_project_site.py
-!/tools/fetch_activity_snapshot.py
 !/tools/test_public_source_policy.py
 !/tools/public-source-files.txt
 !/tools/create_update_fixtures.py
-!/tools/update-mirror/
-
-# Cloudflare local build cache and local-only secrets
-.wrangler/
-/tools/update-mirror/.dev.vars*
-/tools/update-mirror/.env*
-/tools/update-mirror/public/
 
 # Tests and device acceptance material remain in the private development tree.
 /test/*
 !/test/book_search_test.dart
+!/test/custom_speech_test.dart
 !/test/app_search_field_test.dart
+!/test/reading_artwork_test.dart
 !/test/fork_release_update_test.dart
 !/test/local_scan_test.dart
+!/test/shelf_category_picker_test.dart
 /integration_test/
 /test_driver/
 /android/app/src/test/
@@ -177,3 +171,7 @@ key.properties
 !android/gradlew
 !android/gradlew.bat
 !android/gradle/wrapper/gradle-wrapper.jar
+
+# Local agent collaboration documents stay out of the tracked public tree.
+/AGENTS.md
+/CLAUDE.md

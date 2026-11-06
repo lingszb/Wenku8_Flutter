@@ -765,7 +765,7 @@ class _ListeningPanelState extends State<ListeningPanel> {
                 source == ListeningSource.system
                     ? '使用手机安装的 TTS 引擎，语音数据与联网方式由引擎管理。'
                     : source == ListeningSource.custom
-                    ? '使用你配置的 Microsoft SSML 兼容接口。'
+                    ? '使用你配置的 Microsoft SSML 或 OpenAI Speech 兼容接口。'
                     : 'Edge 神经网络音色 · 免费，无需登录。未缓存语段需联网生成；已生成语音可直接复用。',
                 style: TextStyle(
                   fontSize: 12,

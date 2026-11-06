@@ -90,9 +90,6 @@ enum ReadingVisualTheme {
   final int backgroundValue, inkValue, mutedValue, accentValue, secondaryValue;
   String get id => name;
 
-  /// UI-only thumbnail. Native widgets retain their full approved artwork;
-  /// reports and keepsakes use the separate export-asset registry.
-  String get artAsset => 'assets/reading_previews/$name-117.webp';
   Color get background => Color(backgroundValue);
   Color get foreground => Color(inkValue);
   Color get muted => Color(mutedValue);
