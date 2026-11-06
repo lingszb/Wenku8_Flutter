@@ -3,8 +3,11 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/services.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:wenku8_flutter/listening/controller.dart';
 import 'package:wenku8_flutter/listening/custom_tts.dart';
+import 'package:wenku8_flutter/listening/custom_tts_page.dart';
 import 'package:wenku8_flutter/listening/models.dart';
 
 class _Headers extends Fake implements HttpHeaders {
@@ -87,14 +90,22 @@ class _Client extends Fake implements HttpClient {
 class _Storage implements CustomSpeechStorage {
   String? value;
   bool fail = false;
+  bool failRead = false;
+  Completer<String?>? pendingRead;
   @override
-  Future<String?> read() async => value;
+  Future<String?> read() async {
+    if (failRead) throw PlatformException(code: 'unavailable');
+    return pendingRead == null ? value : pendingRead!.future;
+  }
+
   @override
   Future<void> write(String? next) async {
     if (fail) throw PlatformException(code: 'unavailable');
     value = next;
   }
 }
+
+class _ListeningController extends Fake implements ListeningController {}
 
 CustomSpeechConfig _config({
   CustomSpeechProtocol protocol = CustomSpeechProtocol.microsoftSsml,
@@ -114,6 +125,93 @@ CustomSpeechConfig _config({
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  testWidgets('retry restores saved fields after startup storage failure', (
+    tester,
+  ) async {
+    final config = _config(protocol: CustomSpeechProtocol.openAiSpeech);
+    final storage = _Storage()
+      ..value = jsonEncode(config.toJson())
+      ..failRead = true;
+    final settings = CustomSpeechSettings(storage: storage);
+    await settings.load();
+    expect(settings.config, isNull);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: CustomSpeechPage(
+          settings: settings,
+          controller: _ListeningController(),
+        ),
+      ),
+    );
+    storage.failRead = false;
+    storage.pendingRead = Completer<String?>();
+    await tester.tap(find.text('重新读取已保存配置'));
+    await tester.pump();
+    expect(
+      tester.widget<TextField>(find.byType(TextField).first).enabled,
+      isFalse,
+    );
+    storage.pendingRead!.complete(storage.value);
+    await tester.pumpAndSettle();
+    expect(settings.error, isNull);
+    expect(settings.config!.namespace, config.namespace);
+    expect(find.text('重新读取已保存配置'), findsNothing);
+    final values = tester
+        .widgetList<TextField>(find.byType(TextField))
+        .map((field) => field.controller!.text)
+        .toList();
+    expect(
+      values,
+      containsAll([
+        config.endpoint,
+        config.voiceId,
+        config.locale,
+        config.apiKey,
+        config.model,
+      ]),
+    );
+    expect(storage.value, jsonEncode(config.toJson()));
+    await tester.pumpWidget(const SizedBox());
+    settings.dispose();
+  });
+
+  testWidgets('failed retry preserves edits and remains retryable', (
+    tester,
+  ) async {
+    final storage = _Storage()..failRead = true;
+    final settings = CustomSpeechSettings(storage: storage);
+    await settings.load();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: CustomSpeechPage(
+          settings: settings,
+          controller: _ListeningController(),
+        ),
+      ),
+    );
+    final field = find.byType(TextField).first;
+    await tester.enterText(field, 'https://edited.example/speech');
+    await tester.tap(find.text('重新读取已保存配置'));
+    await tester.pumpAndSettle();
+    expect(settings.error, isNotNull);
+    expect(
+      tester.widget<TextField>(field).controller!.text,
+      'https://edited.example/speech',
+    );
+    expect(tester.widget<TextField>(field).enabled, isTrue);
+    expect(find.text('重新读取已保存配置'), findsOneWidget);
+    expect(storage.value, isNull);
+    storage.failRead = false;
+    storage.pendingRead = Completer<String?>();
+    await tester.tap(find.text('重新读取已保存配置'));
+    await tester.pump();
+    await tester.pumpWidget(const SizedBox());
+    storage.pendingRead!.complete(null);
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    settings.dispose();
+  });
 
   test(
     'Microsoft sends escaped SSML and expected output/auth headers',

@@ -51,6 +51,28 @@ class _CustomSpeechPageState extends State<CustomSpeechPage> {
   int _previewEpoch = 0;
   String? _error;
 
+  Future<void> _reloadConfiguration() async {
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    await widget.settings.load();
+    if (!mounted) return;
+    setState(() {
+      _saving = false;
+      if (widget.settings.error != null) return;
+      final config = widget.settings.config;
+      _endpoint.text = config?.endpoint ?? '';
+      _voice.text = config?.voiceId ?? 'zh-CN-XiaoxiaoNeural';
+      _locale.text = config?.locale ?? 'zh-CN';
+      _key.text = config?.apiKey ?? '';
+      _model.text = config?.model ?? '';
+      _protocol = config?.protocol ?? CustomSpeechProtocol.microsoftSsml;
+      _authentication =
+          config?.authentication ?? CustomSpeechAuthentication.none;
+    });
+  }
+
   CustomSpeechConfig _configuration() => CustomSpeechConfig.create(
     endpoint: _endpoint.text,
     voiceId: _voice.text,
@@ -226,6 +248,11 @@ class _CustomSpeechPageState extends State<CustomSpeechPage> {
         children: [
           if (widget.settings.error != null)
             FeatureError(widget.settings.error),
+          if (widget.settings.error != null)
+            TextButton(
+              onPressed: _saving || _previewing ? null : _reloadConfiguration,
+              child: const AppText('重新读取已保存配置'),
+            ),
           FeatureError(_error),
           ContentPanel(
             child: Column(

@@ -175,7 +175,7 @@ class CustomSpeechSettings extends ChangeNotifier {
           : CustomSpeechConfig.fromJson(jsonDecode(raw));
       error = null;
     } catch (_) {
-      error = '本机语音配置暂时无法读取，请重新进入设置后重试；未删除已保存配置';
+      error = '本机语音配置暂时无法读取，请在设置中重新读取已保存配置；未删除已保存配置';
     }
     notifyListeners();
   }
