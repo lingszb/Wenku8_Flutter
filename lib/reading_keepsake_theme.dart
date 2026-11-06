@@ -1,5 +1,3 @@
-import 'package:flutter/painting.dart';
-
 import 'reading_export_theme.dart';
 import 'reading_visual_theme.dart';
 import 'reading_visual_theme_picker.dart';
@@ -26,8 +24,6 @@ ReadingVisualThemePresentation readingKeepsakeThemePresentation(
     foreground: style.foreground,
     secondary: style.secondary,
     prefersSerif: style.prefersSerif,
-    alignment: theme == ReadingVisualTheme.editorial
-        ? Alignment.centerRight
-        : style.previewAlignment,
+    alignment: style.previewAlignment,
   );
 }

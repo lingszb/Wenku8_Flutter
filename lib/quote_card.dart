@@ -12,6 +12,7 @@ import 'feature_pages.dart';
 import 'gallery_save_button.dart';
 import 'local_platform.dart';
 import 'reading_export_theme.dart';
+import 'reading_artwork.dart';
 import 'reading_keepsake_theme.dart';
 import 'reading_visual_theme.dart';
 import 'reading_visual_theme_picker.dart';
@@ -351,13 +352,13 @@ class QuoteCardLayout {
     }
 
     void sceneHeader() {
-      art(const Rect.fromLTWH(0, 0, width, 270), alignment: Alignment.center);
+      art(const Rect.fromLTWH(0, 0, width, 320), alignment: Alignment.center);
       canvas.drawRect(
-        const Rect.fromLTWH(0, 150, width, 145),
+        const Rect.fromLTWH(0, 200, width, 145),
         Paint()
           ..shader = ui.Gradient.linear(
-            const Offset(0, 150),
-            const Offset(0, 295),
+            const Offset(0, 200),
+            const Offset(0, 345),
             [s.background.withValues(alpha: 0), s.background],
           ),
       );
@@ -387,8 +388,8 @@ class QuoteCardLayout {
           spacing: 1.6,
         );
         art(
-          const Rect.fromLTWH(282, 44, 150, 200),
-          alignment: Alignment.topRight,
+          const Rect.fromLTWH(240, 64, 192, 128),
+          alignment: Alignment.center,
           full: true,
         );
         canvas.drawRect(
@@ -398,9 +399,9 @@ class QuoteCardLayout {
         date(const Offset(48, 266));
       case ReadingVisualTheme.shelf:
         sceneHeader();
-        date(const Offset(48, 270));
+        date(const Offset(48, 320));
         canvas.drawLine(
-          const Offset(27, 336),
+          const Offset(27, 386),
           Offset(27, _footerTop + 20),
           Paint()
             ..color = s.accent.withValues(alpha: .5)
@@ -416,15 +417,15 @@ class QuoteCardLayout {
           color: s.accent,
         );
         art(
-          const Rect.fromLTWH(24, 91, 432, 243.2),
+          const Rect.fromLTWH(24, 91, 432, 288),
           alignment: Alignment.center,
           full: true,
         );
-        line(32, 350, 416, color: s.accent);
-        date(const Offset(32, 364));
+        line(32, 395, 416, color: s.accent);
+        date(const Offset(32, 409));
       case ReadingVisualTheme.constellation:
         art(
-          const Rect.fromLTWH(228, 24, 224, 392),
+          const Rect.fromLTWH(228, 24, 224, 224 * 2 / 3),
           alignment: s.previewAlignment,
         );
         _label(
@@ -447,7 +448,7 @@ class QuoteCardLayout {
         }
         date(const Offset(48, 202), maxWidth: 165);
         line(48, 238, 100, color: s.accent, stroke: 2);
-        line(48, 424, 384, color: s.accent.withValues(alpha: .55));
+        line(48, 264, 384, color: s.accent.withValues(alpha: .55));
       case ReadingVisualTheme.signal:
         _label(
           canvas,
@@ -459,9 +460,9 @@ class QuoteCardLayout {
           spacing: .5,
         );
         art(
-          const Rect.fromLTWH(234, 18, 222, 296),
+          const Rect.fromLTWH(234, 96, 222, 148),
           full: true,
-          alignment: Alignment.topRight,
+          alignment: Alignment.center,
         );
         final paper = Path()..moveTo(24, 350);
         for (var x = 24.0; x < 456; x += 18) {
@@ -485,37 +486,37 @@ class QuoteCardLayout {
           spacing: 1,
         );
         art(
-          const Rect.fromLTWH(32, 104, 416, 234),
+          const Rect.fromLTWH(32, 104, 416, 416 * 2 / 3),
           full: true,
           alignment: Alignment.center,
         );
-        line(38, 358, 404, color: s.accent);
-        date(const Offset(38, 372));
+        line(38, 402, 404, color: s.accent);
+        date(const Offset(38, 416));
       case ReadingVisualTheme.ink:
         sceneHeader();
-        date(const Offset(48, 290));
-        line(48, 315, 384, color: s.accent.withValues(alpha: .4));
+        date(const Offset(48, 340));
+        line(48, 365, 384, color: s.accent.withValues(alpha: .4));
       case ReadingVisualTheme.festival:
         canvas.drawRect(
-          const Rect.fromLTWH(24, 26, 432, 285),
+          const Rect.fromLTWH(24, 26, 432, 328),
           Paint()..color = const Color(0xfffcfbf7),
         );
         art(
-          const Rect.fromLTWH(32, 34, 416, 234),
+          const Rect.fromLTWH(32, 34, 416, 416 * 2 / 3),
           full: true,
           alignment: Alignment.center,
         );
         _label(
           canvas,
           '摘录',
-          const Offset(44, 281),
+          const Offset(44, 325),
           color: s.foreground,
           size: 13,
           spacing: 1,
         );
-        date(const Offset(300, 282), maxWidth: 136);
+        date(const Offset(300, 326), maxWidth: 136);
         for (var x = 32.0; x < 448; x += 13) {
-          line(x, 333, 5, color: s.muted.withValues(alpha: .55));
+          line(x, 377, 5, color: s.muted.withValues(alpha: .55));
         }
     }
     _label(
@@ -596,13 +597,13 @@ class _QuoteGeometry {
     ReadingVisualTheme.archive => const _QuoteGeometry(48, 300, 384, 790),
     ReadingVisualTheme.shelf => const _QuoteGeometry(
       48,
-      345,
+      395,
       384,
-      890,
+      940,
       fontSize: 24,
     ),
-    ReadingVisualTheme.editorial => const _QuoteGeometry(48, 407, 384, 940),
-    ReadingVisualTheme.constellation => const _QuoteGeometry(48, 460, 384, 990),
+    ReadingVisualTheme.editorial => const _QuoteGeometry(48, 452, 384, 985),
+    ReadingVisualTheme.constellation => const _QuoteGeometry(48, 300, 384, 830),
     ReadingVisualTheme.signal => const _QuoteGeometry(
       52,
       398,
@@ -612,19 +613,19 @@ class _QuoteGeometry {
     ),
     ReadingVisualTheme.score => const _QuoteGeometry(
       52,
-      418,
+      462,
       376,
-      970,
+      1014,
       fontSize: 24,
     ),
     ReadingVisualTheme.ink => const _QuoteGeometry(
       48,
-      348,
+      398,
       384,
-      900,
+      950,
       fontSize: 25,
     ),
-    ReadingVisualTheme.festival => const _QuoteGeometry(48, 370, 384, 920),
+    ReadingVisualTheme.festival => const _QuoteGeometry(48, 414, 384, 964),
   };
 }
 
@@ -634,12 +635,14 @@ Future<ui.Image> loadQuoteThemeArt(
   ReadingVisualTheme theme, {
   DateTime? recordedAt,
   DateTime? artAt,
+  AssetBundle? bundle,
 }) async {
-  final bytes = await rootBundle.load(
+  final artwork = await loadReadingArtwork(
     readingKeepsakeArt(theme, recordedAt: recordedAt, artAt: artAt),
+    bundle: bundle,
   );
   final codec = await ui.instantiateImageCodec(
-    bytes.buffer.asUint8List(),
+    artwork.bytes,
     targetWidth: 1080,
   );
   try {

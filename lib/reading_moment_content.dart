@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import 'app_ui.dart';
 import 'reading_export_theme.dart';
+import 'reading_artwork.dart';
 import 'reading_keepsake_theme.dart';
 import 'reading_moments.dart';
 import 'reading_visual_theme.dart';
@@ -18,12 +19,24 @@ class ReadingMomentPresentation {
     this.isPreview = false,
     this.showBookDetails = true,
     this.coverBytes,
+    this.artwork,
   });
   final ReadingMoment moment;
   final ReadingVisualTheme theme;
   final bool isPreview;
   final bool showBookDetails;
   final Uint8List? coverBytes;
+  final ReadingArtwork? artwork;
+
+  ReadingMomentPresentation withArtwork(ReadingArtwork value) =>
+      ReadingMomentPresentation(
+        moment: moment,
+        theme: theme,
+        isPreview: isPreview,
+        showBookDetails: showBookDetails,
+        coverBytes: coverBytes,
+        artwork: value,
+      );
 
   factory ReadingMomentPresentation.preview(ReadingVisualTheme theme) =>
       ReadingMomentPresentation(
@@ -201,14 +214,13 @@ class _MomentComposition {
     double? artWidth,
     BoxFit fit = BoxFit.cover,
     Alignment? alignment,
-  }) => Image.asset(
-    asset ?? artAsset,
+  }) => ReadingArtworkImage(
+    asset: asset ?? artAsset,
+    artwork: presentation.artwork,
     width: artWidth ?? width,
     height: height,
     fit: fit,
     alignment: alignment ?? edition.previewAlignment,
-    excludeFromSemantics: true,
-    filterQuality: FilterQuality.medium,
   );
 
   Widget panorama({EdgeInsets? margin, double frame = 0}) => Container(
@@ -216,7 +228,7 @@ class _MomentComposition {
     padding: EdgeInsets.all(frame),
     color: frame == 0 ? null : const Color(0xfffcfbf5),
     child: AspectRatio(
-      aspectRatio: 1080 / 608,
+      aspectRatio: 3 / 2,
       child: artwork(fit: BoxFit.contain, alignment: Alignment.center),
     ),
   );
@@ -407,9 +419,9 @@ class _MomentComposition {
             const SizedBox(width: 16),
             artwork(
               artWidth: width * .32,
-              height: width * .32 * 4 / 3,
+              height: width * .32 * 2 / 3,
               fit: BoxFit.contain,
-              alignment: Alignment.topRight,
+              alignment: Alignment.center,
             ),
           ],
         ),
@@ -429,9 +441,13 @@ class _MomentComposition {
       Stack(
         children: [
           artwork(
-            asset: readingKeepsakeArt(theme, portrait: true),
-            height: width * (compact ? .72 : 1.02),
-            alignment: const Alignment(0, .15),
+            asset: readingKeepsakeArt(
+              theme,
+              recordedAt: moment.earnedAt,
+              portrait: true,
+            ),
+            height: width * 2 / 3,
+            alignment: Alignment.center,
           ),
           Positioned.fill(
             child: DecoratedBox(
@@ -440,11 +456,12 @@ class _MomentComposition {
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
                   colors: [
-                    edition.background.withValues(alpha: .22),
-                    edition.background.withValues(alpha: .05),
+                    edition.background.withValues(alpha: .80),
+                    edition.background.withValues(alpha: .70),
+                    edition.background.withValues(alpha: .12),
                     edition.background.withValues(alpha: .98),
                   ],
-                  stops: const [0, .35, 1],
+                  stops: const [0, .30, .55, 1],
                 ),
               ),
             ),
@@ -540,7 +557,7 @@ class _MomentComposition {
               ),
             ),
             const SizedBox(width: 12),
-            artwork(artWidth: width * .43, height: width * .43 * 16 / 9),
+            artwork(artWidth: width * .43, height: width * .43 * 2 / 3),
           ],
         ),
       ),
@@ -580,9 +597,9 @@ class _MomentComposition {
             const SizedBox(width: 13),
             artwork(
               artWidth: width * .45,
-              height: width * .45 * 4 / 3,
+              height: width * .45 * 2 / 3,
               fit: BoxFit.contain,
-              alignment: Alignment.topRight,
+              alignment: Alignment.center,
             ),
           ],
         ),

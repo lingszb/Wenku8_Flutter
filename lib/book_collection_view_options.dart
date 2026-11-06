@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'app_ui.dart';
 import 'app_interactions.dart';
 import 'book_collection_mode.dart';
+import 'book_collection_region_toolbar.dart';
 import 'book_grid_density.dart';
 import 'book_grid_density_controls.dart';
 import 'book_shelf_preferences.dart';
@@ -305,6 +306,12 @@ class BookShelfContentOptions extends StatelessWidget {
             value: category,
             options: categories,
             reduceMotion: reduceMotion,
+            choose: (context) => chooseBookCollectionRegionCategory(
+              context,
+              options: categories,
+              selected: category,
+              reduceMotion: reduceMotion,
+            ),
             onChanged: (value) =>
                 change(shelfContent.copyWith(category: value)),
           ),

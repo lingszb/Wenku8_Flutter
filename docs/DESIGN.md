@@ -169,7 +169,7 @@
 | 断网 | 已导入书籍仍可打开；联网附属功能失败不阻塞本地阅读 |
 | 低性能 / 无障碍 | 关闭玻璃/动效后所有核心操作仍可达，文字缩放和暗色模式不溢出 |
 
-当前仓库的 [SOURCE_BUILD.md](SOURCE_BUILD.md) 和 [LOCAL_READER_REMOVAL.md](LOCAL_READER_REMOVAL.md) 记录了 Android x86_64 Debug 模拟器的基础验收；**ARM64 真机和 Release 性能尚需独立验收**。
+当前仓库的 [SOURCE_BUILD.md](SOURCE_BUILD.md) 和 [LOCAL_READER_REMOVAL.md](archive/2026-11-04-local-reader-removal.md) 记录了 Android x86_64 Debug 模拟器的基础验收；**ARM64 真机和 Release 性能尚需独立验收**。
 
 ## 9. 未来 AI 阅读界面：建议方向（尚未实现）
 

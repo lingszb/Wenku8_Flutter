@@ -1,0 +1,31 @@
+{
+  "generator": "OpenAI image generation via the built-in image_gen tool",
+  "selection": {
+    "style": "A: low-saturation matte paper / woodblock print",
+    "content": "Scenery only, no people or lettering",
+    "usage": "All reading keepsake and quotation themes, preserve saved theme IDs"
+  },
+  "seasons": [
+    {
+      "season": "spring",
+      "path": "assets/report/season-spring.png",
+      "prompt": "Generate a NEW finished standalone seasonal background illustration for reading keepsakes in an elegant Archive/Glass book reader. Use ONLY the LEFT PANEL A of the reference comparison sheet as style guidance; ignore panels B/C, labels and sheet layout. Single landscape image, 1536x1024, full bleed, no frame, no collage. Spring: viewing cherry blossoms at night. Sparse graceful cherry branches with dusty pink blossoms frame an ink-blue still lake, a few drifting petals, distant softened mountains and delicate reflections. Quiet moonlight without a prominent moon. The blossoms feel delicate and clearly spring. Style: sophisticated muted woodblock print on subtle matte paper, restrained finely grained texture, simplified elegant silhouettes and delicate linework, beautiful editorial book-jacket quality. Balanced low saturation, soft ivory highlights, refined dark ink-blue and dusty seasonal accents. Scenic landmarks clustered around the middle horizontal band, generous calm low-detail open sky and water, important elements survive both central portrait crop and horizontal crop. Most of the image should remain quiet enough for readable text overlays applied by the app; do NOT draw any text. No people, no characters, no buildings, no books, no logo, no watermark, no typography. Coherent as one of a four-season series."
+    },
+    {
+      "season": "summer",
+      "path": "assets/report/season-summer.png",
+      "prompt": "Edit this SUMMER night landscape illustration. Preserve the beautiful muted indigo star-filled sky, diffuse Milky Way, distant wooded hills, still lake, paper grain and refined woodblock-print style. REMOVE EVERY cherry blossom branch, pink blossom and pink floating petal, including every flowering shape along the entire left edge and all petal reflections on the water. Replace those flowering branches with sparse slender dark summer willow leaves along the upper-left margin and some very subtle leafy green-gray silhouettes. Water should have restrained silver star reflections, no pink petals. Retain the calm broad open center, delicate stars and small foreground grasses. Absolutely no flowers anywhere: this is summer, not spring. Full-bleed 1536x1024 landscape, no typography, no people, no buildings, no frame."
+    },
+    {
+      "season": "autumn",
+      "path": "assets/report/season-autumn.png",
+      "prompt": "Create a finished standalone AUTUMN landscape background for an elegant reading keepsake. Landscape 1536x1024, full bleed. Theme: quietly admiring the autumn full moon. A modest luminous ivory full moon in the upper central sky above a still slate-blue lake, soft distant layered mountains, restrained golden-ochre autumn reeds along the lower margins and a few sparse muted russet maple leaves entering near an upper corner. Faint silver moon-reflection on calm water. STYLE: exquisite low-saturation woodblock print on matte paper, very fine controlled paper grain, elegant simplified silhouettes, subtle delicate carved lines, quiet editorial book-jacket art. Muted ink blue, warm ivory and subdued russet/ochre; sophisticated and restrained, not neon. Generous low-detail sky and water for app-added text; major seasonal elements survive center portrait crop and broad horizontal crop. Keep an open central band. No cherry blossoms, no pink flowers, no falling snow, no stars competing with the moon, no people, buildings, lettering, numbers, books, borders, logos or watermarks. The moon is a natural small focal point, not a giant planet. Match a refined four-season paper-print series."
+    },
+    {
+      "season": "winter",
+      "path": "assets/report/season-winter.png",
+      "prompt": "Create a finished standalone WINTER landscape background for an elegant reading keepsake. Landscape 1536x1024, full bleed. Theme: meeting the first snowfall. A quiet blue-gray lake edge and softly snow-dusted distant hills, sparse bare winter branches at the margins, thin new snow settling on foreground reeds and ground, delicate tiny falling snowflakes against a muted slate-blue dusk sky, restrained ivory reflections on still water. First snow, gentle and light, not a blizzard or deep alpine landscape. STYLE: exquisite low-saturation woodblock print on matte paper, very fine controlled paper grain, elegant simplified silhouettes, subtle delicate carved lines, quiet editorial book-jacket art. Muted ink blue, cool stone gray, soft warm ivory; sophisticated and restrained. Generous low-detail sky and water for app-added text; major seasonal elements survive center portrait crop and broad horizontal crop. Keep the central band calm. No cherry blossoms, no flowers, no autumn leaves, no dramatic moon or planets, no people, houses, lettering, numbers, books, frames, logos or watermarks. Match a refined four-season paper-print series."
+    }
+  ],
+  "note": "Style guidance used only the comparison artwork generated in this session; no upstream report artwork was copied."
+}

@@ -3,6 +3,7 @@ import 'package:flutter/cupertino.dart' show CupertinoIcons;
 
 import 'app_ui.dart';
 import 'reading_export_theme.dart';
+import 'reading_artwork.dart';
 import 'reading_visual_theme.dart';
 import 'performance_preferences.dart';
 
@@ -20,14 +21,7 @@ class ReadingVisualThemePresentation {
   });
 
   factory ReadingVisualThemePresentation.fromTheme(ReadingVisualTheme theme) =>
-      ReadingVisualThemePresentation(
-        label: theme.label,
-        description: theme.description,
-        artAsset: theme.artAsset,
-        background: theme.background,
-        foreground: theme.foreground,
-        secondary: theme.secondary,
-      );
+      ReadingVisualThemePresentation.fromExportTheme(theme);
 
   factory ReadingVisualThemePresentation.fromExportTheme(
     ReadingVisualTheme theme, {
@@ -250,13 +244,11 @@ class _ExportThemeGalleryState extends State<_ExportThemeGallery> {
   );
 
   Widget _art(ReadingVisualThemePresentation p, {int width = 300}) =>
-      Image.asset(
-        p.artAsset,
+      ReadingArtworkImage(
+        asset: p.artAsset,
         fit: BoxFit.cover,
         alignment: p.alignment,
         cacheWidth: width,
-        excludeFromSemantics: true,
-        errorBuilder: (_, error, stack) => ColoredBox(color: p.secondary),
       );
 
   @override
@@ -321,7 +313,7 @@ class _ExportThemeGalleryState extends State<_ExportThemeGallery> {
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(6),
                     child: SizedBox(
-                      height: 114,
+                      height: 68,
                       width: 101,
                       child: _art(p, width: 300),
                     ),
@@ -355,16 +347,11 @@ class _ThemePreview extends StatelessWidget {
   Widget build(BuildContext context) => ClipRRect(
     borderRadius: BorderRadius.circular(6),
     child: SizedBox.expand(
-      child: Image.asset(
-        presentation.artAsset,
+      child: ReadingArtworkImage(
+        asset: presentation.artAsset,
         fit: BoxFit.cover,
         alignment: presentation.alignment,
         cacheWidth: 420,
-        excludeFromSemantics: true,
-        errorBuilder: (context, error, stackTrace) => ColoredBox(
-          color: presentation.secondary,
-          child: Icon(CupertinoIcons.photo, color: presentation.foreground),
-        ),
       ),
     ),
   );

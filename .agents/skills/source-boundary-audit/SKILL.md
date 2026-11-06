@@ -1,37 +1,33 @@
 ---
 name: source-boundary-audit
-description: Use when adding files or tests, touching upstream-only or missing modules, third-party assets, credentials, distribution/release files, public-source inventory, or investigating unavailable functionality in this Flutter fork.
+description: 审查本仓库新增/移动的公开文件或测试、缺失上游模块、第三方资源来源、敏感材料和源码导出边界时使用；普通已允许文件的小改动无需扩展为全库调查。
 ---
 
-# Public-source boundary and provenance audit
+# 公开源码边界与来源审计
 
-Read [shared rules](../../PROJECT_GUIDE.md), [source build scope](../../../docs/SOURCE_BUILD.md), [local-only removal](../../../docs/LOCAL_READER_REMOVAL.md), [release constraints](../../../docs/RELEASING.md), and [third-party licenses](../../../docs/THIRD_PARTY.md).
+遵守[共享规则](../../PROJECT_GUIDE.md)。按需读取[源码范围](../../../docs/SOURCE_BUILD.md)、[分发条件](../../../docs/THIRD_PARTY.md)和[发布说明](../../../docs/RELEASING.md)；历史 PR 只用于追溯，不替代当前树。
 
-## Actual publication gate
+## 实际门禁
 
-- `tools/check_public_source.py` scans the **exact commit** against `tools/public-source-files.txt`. Merely adding an entry to the inventory does not waive local-only names, private components, sensitive paths or secret checks.
-- The scanner explicitly classifies `AGENTS.md` as **local-only**, even if tracked elsewhere. **Do not commit it or weaken the checker** as part of a routine feature/skill change; public shared guidance lives in `.agents/PROJECT_GUIDE.md`.
-- Only currently accepted public Dart tests in the `test/` directory and listed in the inventory are eligible for public export; other private/dev test materials remain excluded.
-- Treat Android preview source and upstream distribution as different products. A successful local Debug APK does not imply every upstream feature, platform or asset is published.
+- `tools/check_public_source.py` 同时检查 `tools/public-source-files.txt` 精确路径、受限组件、本地材料与敏感内容。加入清单不豁免独立规则，未被 gitignore 忽略也不代表可公开。
+- 根目录 `AGENTS.md` 被明确归为本地材料，不能通过本轮修改绕过；公开规则维护在 `.agents/PROJECT_GUIDE.md`。测试仅允许已审查、登记且符合扫描器规则的公开文件。
+- 区分工作区、已跟踪文件与提交树；有 Dart 类型 / 通道 / 入口不证明能力或原生实现存在。记录调用点和实际文件清单，不将“本树缺失”推断为“私有”或“任何地方都不存在”。
 
-## Audit procedure
+## 审查步骤
 
-1. Confirm that every proposed path exists, is new, or has a known license. Check the tracked tree rather than guessing from Dart imports or screenshots.
-2. If runtime references a missing file or module, record **both** the source call site and actual published file inventory. Distinguish "not in this Git tree" from "proprietary" or "not available anywhere".
-3. For a new source file, adjust `tools/public-source-files.txt` and ensure the filename/path is not independently rejected. For third-party assets, record provenance, license and redistribution rights before adding bytes.
-4. Avoid restoring removed online account/cloud browsing, private runtime bindings or unapproved distribution code as a side effect of fixing local reading.
-5. Run the checked-out working-tree checker where available:
-   ```sh
-   python3 tools/check_public_source.py
+1. 确认每个新增 / 移动文件的用途、来源和分发条件；文件移动同步更新引用与清单精确路径，不批量放宽目录权限，不删除门禁或绕过 hooks。
+2. 对新增资源保留许可 / 来源；对缺失模块追踪 Dart 与原生契约。不得恢复已移除的文库服务或用假成功替代不可用能力。
+3. 选对检查范围：
+   - 干净公开导出目录可执行 `python tools/check_public_source.py <export-root>`；未指定目录时扫描整个当前工作区，包含本地忽略材料，可能产生预期失败，不能据此删除用户文件。
+   - 未提交修改可使用检查器的 `inspect(root, files=..., require_manifest=True)` 审查明确的拟公开文件集合，包含新路径并排除已移走文件；结果必须标记为拟提交集合检查，不称为精确提交通过。
+   - 已有提交使用以下 PowerShell 命令检查精确树：
+
+   ```powershell
+   $revision = git rev-parse HEAD
+   python tools/check_public_source.py --revision $revision
    ```
-   Once committed, use the exact-revision gate:
-   ```sh
-   python3 tools/check_public_source.py --revision "$(git rev-parse HEAD)"
-   ```
-6. Verify the committed tree and inventory match; inspect CI source-check status. Do not describe an unrun check as passing.
 
-## Safe alternatives and handoff
+4. 记录失败文件和规则，修复本次责任范围；不打印匹配到的密钥、用户内容或私人路径，不自动将日志、截图、APK、签名或测试书加入清单。
+5. 只有获授权且已产生新提交后，才可检查该提交；HEAD 检查通过不覆盖未提交修改，CI 旧结果也不覆盖新提交。无需为执行精确树检查而自行提交。
 
-- For missing illustrations, implement a deterministic, non-asset fallback shared by preview and export instead of inventing or extracting artwork of uncertain license.
-- For unavailable native features, keep an honest disabled/unavailable UX rather than introducing a fake implementation.
-- Report newly exposed files, policy impacts, third-party rights, attempted checks and any unresolved provenance. Never print secrets or personal path/device identifiers in logs.
+交付时列明新增 / 移动路径、来源与清单变化、检查范围及结果、未解决限制。图片缺失优先复用已有回退；确需生成或引入新图时使用可用的对应工具并记录来源，不把资产生成变成所有修复的前置任务。
