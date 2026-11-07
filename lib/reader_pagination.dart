@@ -373,11 +373,39 @@ Future<ReaderPagination?> paginateReader({
   final glyphMetrics = measured.glyphs;
   void flush() {
     if (fragments.isEmpty) return;
+    // A comic leaf containing only illustrations should use the available
+    // height symmetrically. Leave text/image mixtures and vertical writing
+    // untouched, and keep image sizes and source anchors unchanged.
+    var leafFragments = fragments;
+    if (!vertical && fragments.every((fragment) => fragment.image)) {
+      final top = fragments.map((fragment) => fragment.rect.top).reduce(math.min);
+      final bottom = fragments
+          .map((fragment) => fragment.rect.bottom)
+          .reduce(math.max);
+      final occupied = bottom - top;
+      if (occupied > 0 && occupied < size.height) {
+        final dy = (size.height - occupied) / 2 - top;
+        leafFragments = [
+          for (final fragment in fragments)
+            ReaderPageFragment(
+              paragraph: fragment.paragraph,
+              start: fragment.start,
+              end: fragment.end,
+              text: fragment.text,
+              rect: fragment.rect.shift(Offset(0, dy)),
+              indent: fragment.indent,
+              image: fragment.image,
+              rule: fragment.rule,
+              lineMetrics: fragment.lineMetrics,
+            ),
+        ];
+      }
+    }
     final text = pageText.toString();
     pages.add(
       columns.isEmpty
-          ? ReaderLeaf(fragments, text: text, vertical: vertical)
-          : ReaderLeaf._vertical(fragments, text, columns, glyphCache),
+          ? ReaderLeaf(leafFragments, text: text, vertical: vertical)
+          : ReaderLeaf._vertical(leafFragments, text, columns, glyphCache),
     );
     fragments = [];
     columns = [];
