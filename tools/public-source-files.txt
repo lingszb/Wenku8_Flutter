@@ -1036,3 +1036,4 @@ docs/archive/2026-11-06-seasonal-art-audit.md
 test/local_book_metadata_test.dart
 lib/local_import_groups.dart
 test/local_book_batch_test.dart
+test/local_reading_history_shortcut_test.dart
