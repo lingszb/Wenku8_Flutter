@@ -246,6 +246,7 @@ class HomeShellState extends State<HomeShell> with TickerProviderStateMixin {
         : LocalLibraryPage(
             books: local,
             state: widget.state,
+            repository: widget.repository,
             controller: _localLibrary,
             showHeader: false,
             compactMainPageControls: true,
@@ -1324,6 +1325,7 @@ class ShelfPage extends StatefulWidget {
                     LocalLibraryPage(
                       books: local,
                       state: state,
+                      repository: repository,
                       onOpen: (page, book) => openDetail(
                         page,
                         book,
@@ -2421,6 +2423,7 @@ Future<void> openLocalLibrary(
   LocalLibraryPage(
     books: books,
     state: state,
+    repository: repository,
     onOpen: (page, novel) =>
         openDetail(page, novel, state, repository, entry: ReadingEntry.local),
     onOpenWithCover: (page, novel, tag) => openDetail(
