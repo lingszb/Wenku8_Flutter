@@ -18,11 +18,15 @@ class LocalScanPage extends StatefulWidget {
     required this.result,
     required this.failure,
     required this.onScan,
+    this.hasPending,
+    this.onDiscard,
   });
 
   final BookDocuments documents;
   final Listenable changes;
   final bool Function() isBusy;
+  final bool Function()? hasPending;
+  final Future<void> Function()? onDiscard;
   final (int, int)? Function() progress;
   final LocalScanResult? Function() result;
   final String? Function() failure;
@@ -124,7 +128,9 @@ class _LocalScanPageState extends State<LocalScanPage>
         return ListView(
           padding: featurePadding(context),
           children: [
-            const AppText('扫描 TXT、EPUB 后勾选导入。扫描不会移动或删除原文件，保存方式沿用导入设置。'),
+            const AppText(
+              '扫描 TXT、EPUB 后勾选导入。离开页面后任务会继续，可在本地页查看进度和结果；关闭应用可能中断任务。扫描不会移动或删除原文件，保存方式沿用导入设置。',
+            ),
             const SizedBox(height: 20),
             AppText(
               _folder == null ? '尚未选择扫描位置' : '扫描位置：${_folder!.name}',
@@ -138,14 +144,18 @@ class _LocalScanPageState extends State<LocalScanPage>
             const SizedBox(height: 12),
             GlassTextButton(
               key: const ValueKey('scan-select-folder'),
-              onPressed: busy ? null : _choose,
+              onPressed: busy || widget.hasPending?.call() == true
+                  ? null
+                  : _choose,
               child: AppText(_folder == null ? '选择文件夹' : '更换文件夹'),
             ),
             if (LocalPlatform.android) ...[
               const SizedBox(height: 8),
               GlassTextButton(
                 key: const ValueKey('scan-select-shared'),
-                onPressed: busy ? null : () => _choose(all: true),
+                onPressed: busy || widget.hasPending?.call() == true
+                    ? null
+                    : () => _choose(all: true),
                 child: const AppText('扫描共享存储'),
               ),
               const SizedBox(height: 8),
@@ -161,7 +171,9 @@ class _LocalScanPageState extends State<LocalScanPage>
                 value: _formats.contains(format),
                 contentPadding: EdgeInsets.zero,
                 onChanged:
-                    busy || _formats.length == 1 && _formats.contains(format)
+                    busy ||
+                        widget.hasPending?.call() == true ||
+                        _formats.length == 1 && _formats.contains(format)
                     ? null
                     : (value) => _format(format, value == true),
               ),
@@ -184,13 +196,24 @@ class _LocalScanPageState extends State<LocalScanPage>
               onPressed: busy || _folder?.readable != true || _formats.isEmpty
                   ? null
                   : () => widget.onScan(context),
-              child: const AppText('扫描并选择书籍'),
+              child: AppText(
+                widget.hasPending?.call() == true ? '继续选择扫描结果' : '扫描并选择书籍',
+              ),
             ),
+            if (widget.hasPending?.call() == true &&
+                widget.onDiscard != null) ...[
+              const SizedBox(height: 8),
+              GlassTextButton(
+                key: const ValueKey('scan-discard-pending'),
+                onPressed: busy ? null : () => _perform(widget.onDiscard!),
+                child: const AppText('清除待选结果并重新扫描'),
+              ),
+            ],
             if (_folder != null) ...[
               const SizedBox(height: 8),
               GlassTextButton(
                 key: const ValueKey('scan-disconnect'),
-                onPressed: busy
+                onPressed: busy || widget.hasPending?.call() == true
                     ? null
                     : () => _perform(() async {
                         await widget.documents.disconnectScanFolder();

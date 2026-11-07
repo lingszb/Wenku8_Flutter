@@ -167,7 +167,12 @@ class _ReadingHistoryPageState extends State<ReadingHistoryPage> {
       child: ContentPanel(
         onTap: () => widget.onOpen(context, id, novel),
         child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            if (novel != null) ...[
+              ExcludeSemantics(child: NovelCover(novel, width: 56, height: 80)),
+              const SizedBox(width: 14),
+            ],
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -179,6 +184,18 @@ class _ReadingHistoryPageState extends State<ReadingHistoryPage> {
                     style: const TextStyle(fontWeight: FontWeight.w600),
                   ),
                   const SizedBox(height: 7),
+                  if (novel != null && novel.author.isNotEmpty) ...[
+                    AppText(
+                      novel.author,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                  ],
                   AppText(
                     '第 ${chapter + 1} 章${position == null ? '' : ' · 本章 ${(position.fraction * 100).round()}%'}',
                     style: TextStyle(

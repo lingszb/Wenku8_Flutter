@@ -28,11 +28,13 @@ class LocalSeriesEditor extends StatefulWidget {
     required this.books,
     required this.library,
     this.suggested = false,
+    this.initialIds,
   });
   final Novel book;
   final LocalBookStore books;
   final LibraryState library;
   final bool suggested;
+  final List<int>? initialIds;
   @override
   State<LocalSeriesEditor> createState() => _LocalSeriesEditorState();
 }
@@ -56,7 +58,22 @@ class _LocalSeriesEditorState extends State<LocalSeriesEditor> {
               .whereType<LocalBookSeries>()
               .firstOrNull
         : null;
-    _configure(current ?? suggested, related: related);
+    _configure(
+      current ?? suggested,
+      related: widget.initialIds == null ? related : const [],
+    );
+    if (widget.initialIds case final ids?) {
+      for (final id in ids) {
+        final owner = widget.books.seriesFor(id);
+        if (owner != null && owner.id != _series?.id) continue;
+        for (final original in owner?.volumes.map((v) => v.bookId) ?? [id]) {
+          if (!_order.contains(original) &&
+              widget.books.book(original) != null) {
+            _order.add(original);
+          }
+        }
+      }
+    }
   }
 
   String _label(int id) => _labels.putIfAbsent(
@@ -102,7 +119,7 @@ class _LocalSeriesEditorState extends State<LocalSeriesEditor> {
     }
     _title.text =
         series?.title ??
-        widget.books.seriesHint(widget.book.id)?.title ??
+        widget.books.seriesName(widget.book.id) ??
         widget.book.title;
     _error = null;
   }

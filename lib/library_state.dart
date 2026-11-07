@@ -345,7 +345,11 @@ class LibraryState extends ChangeNotifier {
         _prefs.get('reading_history_hidden'),
       ).map(int.tryParse).whereType<int>().where((id) => id > 0),
     );
-    // Hidden-local recovery is retired; retained originals are visible again.
+    _hiddenLocalBooks.addAll(
+      _preferenceStrings(
+        _prefs.get('local_shelf_hidden'),
+      ).map(int.tryParse).whereType<int>().where(isLocalBook),
+    );
     for (final key in _prefs.getKeys()) {
       if (key.startsWith(bookReaderStylePrefix)) {
         final id = int.tryParse(key.substring(bookReaderStylePrefix.length));
@@ -923,7 +927,6 @@ class LibraryState extends ChangeNotifier {
       setLocalBooksHidden([id], hidden);
 
   Future<void> setLocalBooksHidden(Iterable<int> ids, bool hidden) {
-    if (hidden) throw const FormatException('仅移出功能已取消，书籍和文件未变动');
     final targets = ids.where(isLocalBook).toSet();
     if (targets.isEmpty) return Future.value();
     if (_restoreBarrier case final barrier?) {
@@ -3704,7 +3707,9 @@ class LibraryState extends ChangeNotifier {
         _hiddenHistory
           ..clear()
           ..addAll(hidden);
-        _hiddenLocalBooks.clear();
+        _hiddenLocalBooks
+          ..clear()
+          ..addAll(hiddenLocal);
         _recentSearches = searches;
         if (restoredBlockedTags != null) _blockedTags = restoredBlockedTags;
         if (importPreferences) {
