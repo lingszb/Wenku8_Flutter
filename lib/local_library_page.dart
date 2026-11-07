@@ -31,7 +31,7 @@ import 'local_series_editor.dart';
 import 'book_dynamic_categories.dart';
 import 'local_book_removal.dart';
 import 'local_book_batch_page.dart';
-import 'pages.dart' show NovelRow;
+import 'pages.dart' show NovelRow, openReadingHistory;
 import 'ui_notifiers.dart';
 
 export 'cloud_book_sync_panel.dart' show CloudBookSyncPanel;
@@ -63,6 +63,8 @@ Widget _localLibraryHeader(
   BuildContext context,
   LocalLibraryController? controller, {
   bool back = false,
+  LibraryState? historyState,
+  NovelRepository? historyRepository,
 }) {
   Widget header() => Row(
     children: [
@@ -87,6 +89,17 @@ Widget _localLibraryHeader(
           ),
         ),
       ),
+      if (historyState != null && historyRepository != null)
+        GlassIconButton(
+          key: const ValueKey('local-reading-history'),
+          icon: CupertinoIcons.clock,
+          label: '阅读历史',
+          onPressed: () => openReadingHistory(
+            context,
+            historyState,
+            historyRepository,
+          ),
+        ),
       GlassIconButton(
         key: const ValueKey('local-search'),
         icon: CupertinoIcons.search,
@@ -107,6 +120,7 @@ class LocalLibraryPage extends StatefulWidget {
     required this.state,
     required this.onOpen,
     this.onOpenWithCover,
+    this.repository,
     this.showHeader = true,
     this.compactMainPageControls = false,
     this.controller,
@@ -118,14 +132,20 @@ class LocalLibraryPage extends StatefulWidget {
   final LibraryState state;
   final void Function(BuildContext, Novel) onOpen;
   final void Function(BuildContext, Novel, Object)? onOpenWithCover;
+  final NovelRepository? repository;
   final bool showHeader;
   final bool compactMainPageControls;
   final LocalLibraryController? controller;
   final BookDocuments? documents;
   final CloudSourceSettings? cloudSettings;
   final VoidCallback? onSearch;
-  Widget buildHeader(BuildContext context) =>
-      _localLibraryHeader(context, controller, back: showHeader);
+  Widget buildHeader(BuildContext context) => _localLibraryHeader(
+    context,
+    controller,
+    back: showHeader,
+    historyState: state,
+    historyRepository: repository,
+  );
 
   @override
   State<LocalLibraryPage> createState() => _LocalLibraryPageState();
@@ -837,8 +857,13 @@ class _LocalLibraryPageState extends State<LocalLibraryPage>
     super.dispose();
   }
 
-  Widget _header(BuildContext context) =>
-      _localLibraryHeader(context, _controller, back: true);
+  Widget _header(BuildContext context) => _localLibraryHeader(
+    context,
+    _controller,
+    back: true,
+    historyState: widget.state,
+    historyRepository: widget.repository,
+  );
   @override
   Widget build(BuildContext context) {
     final organization = _organization;
