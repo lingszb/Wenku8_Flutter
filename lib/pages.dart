@@ -4273,6 +4273,18 @@ class _DetailPageState extends State<DetailPage> with TickerProviderStateMixin {
                 ),
               ),
       ),
+      if (isLocalBook(novel.id)) ...[
+        const SizedBox(height: 8),
+        AppText(
+          '系列 · ${repository is OfflineNovelRepository ? (repository as OfflineNovelRepository).local?.seriesName(novel.id) ?? '未设置' : '未设置'}',
+          key: const ValueKey('detail-series-name'),
+          style: TextStyle(
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+            fontSize: 13,
+            height: 1.55,
+          ),
+        ),
+      ],
       const SizedBox(height: 13),
       RevealFromTop(
         key: const ValueKey('detail-meta-reveal'),

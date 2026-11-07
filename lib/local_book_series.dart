@@ -29,10 +29,12 @@ class LocalBookSeries {
     required this.nextChapterId,
     required this.updatedAt,
     this.tags,
+    this.seriesName,
     this.deleted = false,
   });
   final int id, nextChapterId, updatedAt;
   final String title, author, summary;
+  final String? seriesName;
   final List<LocalSeriesVolume> volumes;
   final List<String>? tags;
   final bool deleted;
@@ -41,6 +43,7 @@ class LocalBookSeries {
     String? author,
     String? summary,
     List<String>? tags,
+    String? seriesName,
     List<LocalSeriesVolume>? volumes,
     int? nextChapterId,
     int? updatedAt,
@@ -51,6 +54,7 @@ class LocalBookSeries {
     author: author ?? this.author,
     summary: summary ?? this.summary,
     tags: tags ?? this.tags,
+    seriesName: seriesName ?? this.seriesName,
     volumes: volumes ?? this.volumes,
     nextChapterId: nextChapterId ?? this.nextChapterId,
     updatedAt: updatedAt ?? this.updatedAt,
@@ -62,6 +66,7 @@ class LocalBookSeries {
     'author': author,
     'summary': summary,
     'tags': ?tags,
+    'seriesName': ?seriesName,
     'volumes': [for (final volume in volumes) volume.toJson()],
     'nextChapterId': nextChapterId,
     'at': updatedAt,
@@ -98,6 +103,9 @@ List<LocalBookSeries> decodeLocalSeries(Object? raw) {
         item['author'].length > 160 ||
         item['summary'] is! String ||
         item['summary'].length > 4000 ||
+        (item.containsKey('seriesName') &&
+            (item['seriesName'] is! String ||
+                item['seriesName'].length > 160)) ||
         item['at'] is! int ||
         item['at'] < 0 ||
         item['nextChapterId'] is! int ||
@@ -151,6 +159,7 @@ List<LocalBookSeries> decodeLocalSeries(Object? raw) {
         author: item['author'].trim(),
         summary: item['summary'].trim(),
         tags: item.containsKey('tags') ? decodeBookTags(item['tags']) : null,
+        seriesName: (item['seriesName'] as String?)?.trim(),
         volumes: List.unmodifiable(volumes),
         nextChapterId: item['nextChapterId'],
         updatedAt: item['at'],

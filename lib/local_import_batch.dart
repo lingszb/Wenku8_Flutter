@@ -2,6 +2,7 @@
 import 'book_documents.dart';
 import 'catalog.dart';
 import 'local_books.dart';
+import 'local_import_groups.dart';
 
 /// A single non-fatal import message.
 typedef LocalImportNotice = ({String name, String message});
@@ -74,12 +75,11 @@ class LocalImportGroup {
   final List<({int bookId, String title})> volumes;
 }
 
-/// Series grouping is private in this snapshot. Returning an empty set keeps
-/// local imports simple and avoids inventing volume associations.
+/// Offers explicit series review without changing imported originals.
 List<LocalImportGroup> localImportGroups(
   LocalBookStore books,
   List<int> bookIds,
-) => const [];
+) => suggestLocalImportGroups(books, bookIds);
 
 /// Prepares every selected document, imports the resulting files, and keeps
 /// per-file failures from aborting the rest of the batch.

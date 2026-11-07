@@ -1,5 +1,7 @@
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/material.dart' show LinearProgressIndicator;
 import 'package:shared_preferences/shared_preferences.dart';
+
 import 'app_interactions.dart';
 import 'app_ui.dart';
 import 'book_documents.dart';
@@ -74,6 +76,18 @@ class _ImportedCategoryBatch {
   }
 }
 
+/// The task belongs to the library, rather than the route that started it.
+class _LocalImportSession extends ChangeNotifier {
+  bool busy = false;
+  (int, int)? progress;
+  String? error, status;
+  LocalScanResult? scanResult;
+  LocalImportReport? report;
+  BookScanSnapshot? pendingScan;
+  BookDocuments? scanDocuments;
+  void changed() => notifyListeners();
+}
+
 /// Shared by the two library entry points, including series review and cleanup.
 class LocalBookImporter extends ChangeNotifier {
   LocalBookImporter({
@@ -83,16 +97,67 @@ class LocalBookImporter extends ChangeNotifier {
     CloudSourceSettings? cloudSettings,
   }) : documents = documents ?? BookDocuments(),
        _cloud = cloudSettings ?? CloudSourceSettings(),
-       _ownsCloud = cloudSettings == null;
+       _ownsCloud = cloudSettings == null {
+    _session.addListener(_relayChanges);
+  }
   final LocalBookStore books;
   final LibraryState library;
   final BookDocuments documents;
   final CloudSourceSettings _cloud;
   final bool _ownsCloud;
-  bool busy = false, _disposed = false;
-  (int, int)? progress;
-  String? error;
-  LocalScanResult? scanResult;
+  static final _sessions = Expando<_LocalImportSession>();
+  late final _session = _sessions[library] ??= _LocalImportSession();
+  bool _disposed = false;
+  bool get busy => _session.busy;
+  set busy(bool value) => _session.busy = value;
+  (int, int)? get progress => _session.progress;
+  set progress((int, int)? value) => _session.progress = value;
+  String? get error => _session.error;
+  set error(String? value) => _session.error = value;
+  LocalScanResult? get scanResult => _session.scanResult;
+  set scanResult(LocalScanResult? value) => _session.scanResult = value;
+  bool get hasPendingScan => _session.pendingScan != null;
+  bool get hasStatus => busy || hasPendingScan || _session.status != null;
+  bool get canShowStatus =>
+      _session.scanDocuments != null || _session.report != null;
+  String get statusLabel => busy
+      ? progress == null
+            ? _session.status ?? '正在准备导入…'
+            : '正在导入 ${progress!.$1} / ${progress!.$2} 本'
+      : hasPendingScan
+      ? '扫描完成，待确认 ${_session.pendingScan!.books.length} 本，点击继续选择'
+      : _session.status ?? '';
+
+  void dismissStatus() {
+    if (busy || hasPendingScan) return;
+    _session.status = null;
+    _session.report = null;
+    _changed();
+  }
+
+  Future<void> discardPendingScan() async {
+    if (busy || !hasPendingScan) return;
+    await (_session.scanDocuments ?? documents).finishBookScan();
+    _session.pendingScan = null;
+    _session.scanDocuments = null;
+    _session.status = '已清除待选扫描结果，可重新扫描；原文件和已导入书籍保留';
+    _changed();
+  }
+
+  Future<void> showStatus(BuildContext context) async {
+    if (hasPendingScan || busy && _session.scanDocuments != null) {
+      await openScanPage(context);
+    } else if (_session.report case final report?) {
+      await pushNovelPage<void>(
+        context,
+        LocalImportReview(books: books, library: library, report: report),
+        reduceMotion: library.reduceMotion,
+      );
+    } else if (_session.scanDocuments != null) {
+      await openScanPage(context);
+    }
+  }
+
   static bool _scanning = false;
   static DateTime? _lastAutomaticScan;
   bool get _foreground =>
@@ -104,6 +169,7 @@ class LocalBookImporter extends ChangeNotifier {
         busy ||
         _disposed ||
         _scanning ||
+        hasPendingScan ||
         (!resumed &&
             _lastAutomaticScan != null &&
             DateTime.now().difference(_lastAutomaticScan!) <
@@ -128,9 +194,11 @@ class LocalBookImporter extends ChangeNotifier {
     }
   }
 
-  void _changed() {
+  void _relayChanges() {
     if (!_disposed) notifyListeners();
   }
+
+  void _changed() => _session.changed();
 
   Future<void> showMenu(
     BuildContext context, {
@@ -181,8 +249,10 @@ class LocalBookImporter extends ChangeNotifier {
   Future<void> openScanPage(BuildContext context) => pushNovelPage<void>(
     context,
     LocalScanPage(
-      documents: documents,
+      documents: _session.scanDocuments ?? documents,
       changes: this,
+      hasPending: () => hasPendingScan,
+      onDiscard: discardPendingScan,
       isBusy: () => busy,
       progress: () => progress,
       result: () => scanResult,
@@ -254,6 +324,14 @@ class LocalBookImporter extends ChangeNotifier {
       scanResult = null;
     }
     busy = true;
+    progress = null;
+    _session.report = null;
+    _session.status = fromScan ? '正在扫描本地文件夹…' : '正在准备导入…';
+    if (fromScan) {
+      _session.scanDocuments ??= documents;
+    } else if (!hasPendingScan) {
+      _session.scanDocuments = null;
+    }
     error = null;
     _changed();
     LocalLibraryPreferences? organization;
@@ -275,6 +353,8 @@ class LocalBookImporter extends ChangeNotifier {
     }
 
     LocalImportReport? report;
+    var keepScan = false;
+    final scanDocuments = _session.scanDocuments ?? documents;
     try {
       final prefs = await SharedPreferences.getInstance();
       organization = library.organization;
@@ -294,7 +374,7 @@ class LocalBookImporter extends ChangeNotifier {
             ? organization!.shelfSelected
             : organization!.selected;
         if (group != LocalLibraryPreferences.all &&
-            LocalLibraryPreferences.categoryAuthor(group) == null) {
+            !LocalLibraryPreferences.dynamicCategory(group)) {
           if (categories == null) {
             await organization.assign(book.id, group);
           } else {
@@ -470,10 +550,23 @@ class LocalBookImporter extends ChangeNotifier {
         }
       }
 
-      if (!context.mounted || _disposed) return;
+      if ((!context.mounted || _disposed) && !fromScan) return;
       if (fromScan) {
-        final snapshot = await documents.scanBooks();
-        if (!context.mounted || _disposed) return;
+        final snapshot =
+            _session.pendingScan ?? await scanDocuments.scanBooks();
+        if (!automatic) {
+          _session.pendingScan = snapshot;
+          keepScan = true;
+        }
+        scanResult = LocalScanResult(
+          report: const LocalImportReport(),
+          total: snapshot.total,
+          unchanged: snapshot.unchanged,
+          warnings: snapshot.warnings,
+          pending: snapshot.books.length,
+        );
+        _changed();
+        if (!automatic && (!context.mounted || _disposed)) return;
         if (automatic) {
           scanResult = LocalScanResult(
             report: const LocalImportReport(bookIds: [], added: 0, existing: 0),
@@ -483,7 +576,7 @@ class LocalBookImporter extends ChangeNotifier {
             pending: snapshot.books.length,
           );
           _changed();
-          await documents.finishBookScan();
+          _session.status = scanResult!.summary;
           return;
         }
         final selected = snapshot.books.isEmpty
@@ -493,18 +586,26 @@ class LocalBookImporter extends ChangeNotifier {
                 LocalScanSelection(snapshot: snapshot),
                 reduceMotion: library.reduceMotion,
               );
-        if (selected == null || !context.mounted || _disposed) {
-          await documents.finishBookScan();
-          return;
-        }
+        if (selected == null) return;
+        // Once the user has confirmed a finite batch, route disposal must not
+        // cancel it. Pending discovery stays resumable if selection is closed.
+        keepScan = false;
+        _session.pendingScan = null;
+        progress = (0, selected.length);
+        _session.status = '正在导入扫描书籍…';
+        _changed();
         scanResult = await scanLocalBooks(
-          documents: documents,
+          documents: scanDocuments,
           snapshot: snapshot,
           selectedTokens: selected,
           linkText: organization.linkLocalBooks && !copyLocal,
           importSource: (source) async {
             try {
-              return await importPrepared([source], updateProgress: false);
+              return await importPrepared(
+                [source],
+                updateProgress: false,
+                releaseSources: true,
+              );
             } finally {
               try {
                 await documents.releaseBooks(staged);
@@ -514,13 +615,7 @@ class LocalBookImporter extends ChangeNotifier {
               }
             }
           },
-          current: () =>
-              !_disposed &&
-              context.mounted &&
-              (!automatic ||
-                  _foreground &&
-                      ModalRoute.isCurrentOf(context) != false &&
-                      TickerMode.valuesOf(context).enabled),
+          current: () => true,
           onProgress: (done, total) {
             progress = (done, total);
             _changed();
@@ -581,9 +676,10 @@ class LocalBookImporter extends ChangeNotifier {
         report = await importPrepared(selections, releaseSources: true);
       }
       final completed = report;
-      if (!context.mounted || _disposed || completed == null) return;
+      if (completed == null) return;
+      _session.report = completed;
+      _session.status = fromScan ? scanResult!.summary : completed.summary;
       await releaseStaging();
-      if (!context.mounted || _disposed) return;
       if (!automatic) {
         for (final id in completed.bookIds) {
           await library.setLocalBookHidden(id, false);
@@ -626,6 +722,7 @@ class LocalBookImporter extends ChangeNotifier {
       }
     } catch (failure) {
       error = cloudFailureMessage(failure);
+      _session.status = error;
       if (context.mounted && !_disposed) {
         showNovelFeedback(
           context,
@@ -635,14 +732,18 @@ class LocalBookImporter extends ChangeNotifier {
       }
     } finally {
       await releaseStaging();
-      if (fromScan) {
+      if (fromScan && !keepScan) {
+        _session.pendingScan = null;
         try {
-          await documents.finishBookScan();
+          await scanDocuments.finishBookScan();
         } catch (_) {
           // Closing a page must not hide an already committed import.
         }
       }
       busy = false;
+      if (report == null && !hasPendingScan && error == null && !automatic) {
+        _session.status = null;
+      }
       if (fromScan) _scanning = false;
       progress = null;
       _changed();
@@ -652,6 +753,7 @@ class LocalBookImporter extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    _session.removeListener(_relayChanges);
     if (_ownsCloud) _cloud.dispose();
     super.dispose();
   }
@@ -733,6 +835,54 @@ class _LocalBookImportButtonState extends State<LocalBookImportButton>
                 ),
         ),
       ),
+    ),
+  );
+}
+
+/// A library-level task stays visible while the collection itself scrolls.
+class LocalImportStatus extends StatelessWidget {
+  const LocalImportStatus({super.key, required this.importer});
+  final LocalBookImporter importer;
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    liveRegion: true,
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Expanded(child: AppText(importer.statusLabel)),
+            GlassIconButton(
+              key: const ValueKey('local-import-status-open'),
+              icon: CupertinoIcons.info_circle,
+              label: '查看扫描或导入结果',
+              onPressed: importer.canShowStatus
+                  ? () => importer.showStatus(context)
+                  : null,
+            ),
+            if (!importer.busy && !importer.hasPendingScan)
+              GlassIconButton(
+                key: const ValueKey('local-import-status-dismiss'),
+                icon: CupertinoIcons.xmark,
+                label: '收起导入结果',
+                onPressed: importer.dismissStatus,
+              ),
+          ],
+        ),
+        if (importer.busy)
+          Padding(
+            padding: const EdgeInsets.only(top: 6, bottom: 8),
+            child: LinearProgressIndicator(
+              key: const ValueKey('local-import-progress'),
+              value: importer.progress == null || importer.progress!.$2 == 0
+                  ? null
+                  : importer.progress!.$1 / importer.progress!.$2,
+              minHeight: 3,
+            ),
+          ),
+      ],
     ),
   );
 }

@@ -1,7 +1,9 @@
 import 'dart:async';
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
 import 'app_interactions.dart';
 import 'app_ui.dart';
 import 'app_search_field.dart';
@@ -220,7 +222,6 @@ class _LocalLibraryPageState extends State<LocalLibraryPage>
         : LocalLibraryPreferences.all;
   }
 
-
   List<Novel> _featuredBooks(
     LocalLibraryPreferences? organization,
     List<Novel> collection,
@@ -325,6 +326,9 @@ class _LocalLibraryPageState extends State<LocalLibraryPage>
     _controller.search = widget.onSearch ?? _toggleSearch;
     _controller.importMenu = _importMenu;
     _importer.addListener(_importChanged);
+    _importing = _importer.busy;
+    _importProgress = _importer.progress;
+    _error = _importer.error;
     // Keep data invalidation cheap even while this retained tab is offstage.
     // Import progress, keyboard and viewport changes reuse the ordered books.
     _bookChanges.addListener(_invalidateBooks);
@@ -704,7 +708,7 @@ class _LocalLibraryPageState extends State<LocalLibraryPage>
     final category = organization == null
         ? '全部书籍'
         : _shelfCategoryOptions(organization)[organization.selected] ??
-            organization.nameOf(organization.selected);
+              organization.nameOf(organization.selected);
     if (region) {
       return BookCollectionRegionToolbar(
         key: const ValueKey('local-collection-region-toolbar'),
@@ -754,11 +758,12 @@ class _LocalLibraryPageState extends State<LocalLibraryPage>
       BookCollectionRegionToolbar(
         key: const ValueKey('local-shelf-region-heading'),
         title: '立体书架',
-        category: _shelfCategoryOptions(organization)[
-                organization.shelfContent.followCollection
-                    ? organization.selected
-                    : _shelfCategory(organization)
-              ] ??
+        category:
+            _shelfCategoryOptions(
+              organization,
+            )[organization.shelfContent.followCollection
+                ? organization.selected
+                : _shelfCategory(organization)] ??
             organization.nameOf(organization.selected),
         count: count,
         categoryKey: const ValueKey('local-shelf-category'),
@@ -842,265 +847,293 @@ class _LocalLibraryPageState extends State<LocalLibraryPage>
       header: _header(context),
       body: CompactMainPageControls(
         enabled: widget.compactMainPageControls,
-        child: ActiveListenableBuilder(
-          listenable: _viewChanges ?? _bookChanges,
-          builder: (context) {
-            final books = _filteredBooks(organization);
-            final featured = organization?.viewMode.hasShelf == true
-                ? _featuredBooks(organization, books)
-                : const <Novel>[];
-            final shelf = organization?.showsShelf(featured.length) == true;
-            final mixed = organization?.viewMode.hasShelf == true;
-            final grid = organization?.viewMode.isGrid == true;
-            final independent =
-                organization?.viewMode.hasShelf == true &&
-                organization?.shelfContent.followCollection == false;
-            // A carousel is a featured view, not a replacement for the index.
-            // Every filtered book remains reachable in the same complete list.
-            final rows = books;
-            return LoadedContentSequence(
-              generation: (
-                organization?.selected,
-                organization?.readingFilter,
-                organization?.sort,
-                organization?.shelfContent.record,
-                _search.text,
-                shelf,
-                grid,
-              ),
-              child: CustomScrollView(
-                key: const PageStorageKey('local-library'),
-                clipBehavior: LibraryReflowScope.clipOf(context),
-                cacheExtent: BookCollectionLayout.cacheExtentFor(
-                  MediaQuery.sizeOf(context).width - 48,
-                  base: 250,
-                  grid: grid,
+        child: Column(
+          children: [
+            if (_importer.hasStatus)
+              Padding(
+                padding: EdgeInsets.fromLTRB(
+                  24,
+                  MediaQuery.paddingOf(context).top +
+                      FrostedHeader.toolbarHeight +
+                      12,
+                  24,
+                  8,
                 ),
-                slivers: [
-                  SliverPadding(
-                    padding: EdgeInsets.fromLTRB(
-                      24,
-                      MediaQuery.paddingOf(context).top +
-                          FrostedHeader.toolbarHeight +
-                          20,
-                      24,
-                      14,
+                child: LocalImportStatus(importer: _importer),
+              ),
+            Expanded(
+              child: ActiveListenableBuilder(
+                listenable: _viewChanges ?? _bookChanges,
+                builder: (context) {
+                  final books = _filteredBooks(organization);
+                  final featured = organization?.viewMode.hasShelf == true
+                      ? _featuredBooks(organization, books)
+                      : const <Novel>[];
+                  final shelf =
+                      organization?.showsShelf(featured.length) == true;
+                  final mixed = organization?.viewMode.hasShelf == true;
+                  final grid = organization?.viewMode.isGrid == true;
+                  final independent =
+                      organization?.viewMode.hasShelf == true &&
+                      organization?.shelfContent.followCollection == false;
+                  // A carousel is a featured view, not a replacement for the index.
+                  // Every filtered book remains reachable in the same complete list.
+                  final rows = books;
+                  return LoadedContentSequence(
+                    generation: (
+                      organization?.selected,
+                      organization?.readingFilter,
+                      organization?.sort,
+                      organization?.shelfContent.record,
+                      _search.text,
+                      shelf,
+                      grid,
                     ),
-                    sliver: SliverToBoxAdapter(
-                      // SliverToBoxAdapter does not retain its child's picture
-                      // like SliverList does. Keep the toolbar/labels out of the
-                      // scroll repaint path; glass still resolves its transform
-                      // and live backdrop when the retained layers composite.
-                      child: _localToolbarPaint(
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            if (mixed)
-                              _shelfToolbar(organization!, featured.length)
-                            else ...[
-                              _collectionToolbar(organization, books.length),
-                              _searchField(),
-                            ],
-                            const SizedBox(height: 14),
-                            if (widget.books.books.isEmpty &&
-                                organization != null) ...[
-                              const AppText(
-                                '还没有本地书籍，点击右上角导入按钮添加。',
-                                style: TextStyle(height: 1.7),
-                              ),
-                            ],
-                            if (organization == null)
-                              BookCollectionSkeleton(
-                                rows: 2,
-                                grid: grid,
-                                gridDensity:
-                                    organization?.gridDensity ??
-                                    const BookGridDensity.auto(),
-                                label: _importProgress == null
-                                    ? '正在整理本地书库'
-                                    : '正在导入 ${_importProgress!.$1} / ${_importProgress!.$2} 本',
-                              )
-                            else if (_importing) ...[
-                              AppText(
-                                _importProgress == null
-                                    ? '正在导入书籍'
-                                    : '正在导入 ${_importProgress!.$1} / ${_importProgress!.$2} 本',
-                                style: const TextStyle(fontSize: 12),
-                              ),
-                              const SizedBox(
-                                height: 8,
-                                child: RefreshProgress(label: '正在导入书籍'),
-                              ),
-                            ],
-                            if ((_error ?? widget.books.seriesError) !=
-                                null) ...[
-                              AppText(
-                                (_error ?? widget.books.seriesError)!,
-                                style: TextStyle(
-                                  color: Theme.of(context).colorScheme.error,
-                                ),
-                              ),
-                              if (organization == null)
-                                GlassTextButton(
-                                  onPressed: _load,
-                                  child: const AppText('重试'),
-                                ),
-                            ],
-                            if (organization != null &&
-                                books.isEmpty &&
-                                widget.books.books.isNotEmpty &&
-                                !mixed)
-                              const Padding(
-                                padding: EdgeInsets.symmetric(vertical: 24),
-                                child: AppText('没有符合条件的书籍，换个分类或关键词试试。'),
-                              ),
-                          ],
-                        ),
+                    child: CustomScrollView(
+                      key: const PageStorageKey('local-library'),
+                      clipBehavior: LibraryReflowScope.clipOf(context),
+                      cacheExtent: BookCollectionLayout.cacheExtentFor(
+                        MediaQuery.sizeOf(context).width - 48,
+                        base: 250,
+                        grid: grid,
                       ),
-                    ),
-                  ),
-                  if (mixed && featured.isEmpty)
-                    const SliverPadding(
-                      padding: EdgeInsets.fromLTRB(24, 0, 24, 20),
-                      sliver: SliverToBoxAdapter(
-                        child: AppText('立体书架暂无符合条件的书籍'),
-                      ),
-                    ),
-                  if (mixed && featured.isNotEmpty && !shelf)
-                    SliverPadding(
-                      padding: const EdgeInsets.fromLTRB(24, 0, 24, 20),
-                      sliver: SliverToBoxAdapter(
-                        child: AppText(
-                          '当前范围共 ${featured.length} 本，达到 ${organization!.shelfPreferences.minimumBooks} 本时显示立体书架。',
-                          style: const TextStyle(fontSize: 13),
-                        ),
-                      ),
-                    ),
-                  if (shelf)
-                    SliverToBoxAdapter(
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 24),
-                        child: ArchiveFileCarousel(
-                          key: ValueKey((
-                            'local-shelf',
-                            independent
-                                ? organization!.shelfContent.record
-                                : (
-                                    organization!.selected,
-                                    organization.readingFilter,
-                                    organization.sort,
-                                    _search.text,
-                                  ),
-                            independent ? _shelfCategory(organization) : null,
-                          )),
-                          books: featured
-                              .take(
-                                organization.shelfPreferences.featuredCount(
-                                  featured.length,
-                                ),
-                              )
-                              .toList(),
-                          repeatFill: organization.shelfPreferences.repeatFill,
-                          library: widget.state,
-                          entry: ReadingEntry.local,
-                          reduceMotion: widget.state.reduceMotion,
-                          animateEntrance: true,
-                          onOpen: _open,
-                        ),
-                      ),
-                    ),
-                  if (mixed)
-                    SliverPadding(
-                      padding: const EdgeInsets.fromLTRB(24, 20, 24, 16),
-                      sliver: SliverToBoxAdapter(
-                        child: _localToolbarPaint(
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              _collectionToolbar(
-                                organization,
-                                books.length,
-                                region: true,
+                      slivers: [
+                        SliverPadding(
+                          padding: EdgeInsets.fromLTRB(
+                            24,
+                            _importer.hasStatus
+                                ? 12
+                                : MediaQuery.paddingOf(context).top +
+                                      FrostedHeader.toolbarHeight +
+                                      20,
+                            24,
+                            14,
+                          ),
+                          sliver: SliverToBoxAdapter(
+                            // SliverToBoxAdapter does not retain its child's picture
+                            // like SliverList does. Keep the toolbar/labels out of the
+                            // scroll repaint path; glass still resolves its transform
+                            // and live backdrop when the retained layers composite.
+                            child: _localToolbarPaint(
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  if (mixed)
+                                    _shelfToolbar(
+                                      organization!,
+                                      featured.length,
+                                    )
+                                  else ...[
+                                    _collectionToolbar(
+                                      organization,
+                                      books.length,
+                                    ),
+                                    _searchField(),
+                                  ],
+                                  const SizedBox(height: 14),
+                                  if (widget.books.books.isEmpty &&
+                                      organization != null) ...[
+                                    const AppText(
+                                      '还没有本地书籍，点击右上角导入按钮添加。',
+                                      style: TextStyle(height: 1.7),
+                                    ),
+                                  ],
+                                  if (organization == null)
+                                    BookCollectionSkeleton(
+                                      rows: 2,
+                                      grid: grid,
+                                      gridDensity:
+                                          organization?.gridDensity ??
+                                          const BookGridDensity.auto(),
+                                      label: _importProgress == null
+                                          ? '正在整理本地书库'
+                                          : '正在导入 ${_importProgress!.$1} / ${_importProgress!.$2} 本',
+                                    ),
+                                  if ((_error ?? widget.books.seriesError) !=
+                                      null) ...[
+                                    AppText(
+                                      (_error ?? widget.books.seriesError)!,
+                                      style: TextStyle(
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.error,
+                                      ),
+                                    ),
+                                    if (organization == null)
+                                      GlassTextButton(
+                                        onPressed: _load,
+                                        child: const AppText('重试'),
+                                      ),
+                                  ],
+                                  if (organization != null &&
+                                      books.isEmpty &&
+                                      widget.books.books.isNotEmpty &&
+                                      !mixed)
+                                    const Padding(
+                                      padding: EdgeInsets.symmetric(
+                                        vertical: 24,
+                                      ),
+                                      child: AppText('没有符合条件的书籍，换个分类或关键词试试。'),
+                                    ),
+                                ],
                               ),
-                              _searchField(),
-                            ],
+                            ),
                           ),
                         ),
-                      ),
-                    ),
-                  if (mixed && books.isEmpty)
-                    const SliverPadding(
-                      padding: EdgeInsets.fromLTRB(24, 20, 24, 24),
-                      sliver: SliverToBoxAdapter(
-                        child: AppText('下方暂无符合条件的书籍，换个分类或关键词试试。'),
-                      ),
-                    ),
-                  SliverPadding(
-                    padding: const EdgeInsets.symmetric(horizontal: 24),
-                    sliver: BookCollectionSliver(
-                      shareRowGlass: !grid,
-                      grid: grid,
-                      gridDensity:
-                          organization?.gridDensity ??
-                          const BookGridDensity.auto(),
-                      gridBottomInset: widget.showHeader
-                          ? MediaQuery.paddingOf(context).bottom + 32
-                          : DockLayout.scrollPaddingOf(context),
-                      onGridViewport: (v) => _gridViewport.value = v,
-                      itemCount: rows.length,
-                      itemBuilder: (context, index) {
-                        final book = rows[index],
-                            tag = ValueKey('local-cover-${rows[index].id}');
-                        return LoadedContentItem(
-                          key: ValueKey(book.id),
-                          index: index,
-                          placeholder: grid
-                              ? const BookGridSkeleton()
-                              : const BookRowSkeleton(),
-                          child: grid
-                              ? BookGridTile(
-                                  key: ValueKey('local-grid-book-${book.id}'),
-                                  book: book,
-                                  coverHeroTag: tag,
-                                  onTap: () => _open(book, tag),
-                                  progress: _gridProgress(book),
-                                  trailing: GlassIconButton.custom(
-                                    label: '整理 ${book.title}',
-                                    onPressed: () => _bookMenu(book),
-                                    liveGlass: false,
-                                    transparent: true,
-                                    child: const ArchiveIcon(
-                                      CupertinoIcons.ellipsis,
-                                      size: 18,
+                        if (mixed && featured.isEmpty)
+                          const SliverPadding(
+                            padding: EdgeInsets.fromLTRB(24, 0, 24, 20),
+                            sliver: SliverToBoxAdapter(
+                              child: AppText('立体书架暂无符合条件的书籍'),
+                            ),
+                          ),
+                        if (mixed && featured.isNotEmpty && !shelf)
+                          SliverPadding(
+                            padding: const EdgeInsets.fromLTRB(24, 0, 24, 20),
+                            sliver: SliverToBoxAdapter(
+                              child: AppText(
+                                '当前范围共 ${featured.length} 本，达到 ${organization!.shelfPreferences.minimumBooks} 本时显示立体书架。',
+                                style: const TextStyle(fontSize: 13),
+                              ),
+                            ),
+                          ),
+                        if (shelf)
+                          SliverToBoxAdapter(
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 24,
+                              ),
+                              child: ArchiveFileCarousel(
+                                key: ValueKey((
+                                  'local-shelf',
+                                  independent
+                                      ? organization!.shelfContent.record
+                                      : (
+                                          organization!.selected,
+                                          organization.readingFilter,
+                                          organization.sort,
+                                          _search.text,
+                                        ),
+                                  independent
+                                      ? _shelfCategory(organization)
+                                      : null,
+                                )),
+                                books: featured
+                                    .take(
+                                      organization.shelfPreferences
+                                          .featuredCount(featured.length),
+                                    )
+                                    .toList(),
+                                repeatFill:
+                                    organization.shelfPreferences.repeatFill,
+                                library: widget.state,
+                                entry: ReadingEntry.local,
+                                reduceMotion: widget.state.reduceMotion,
+                                animateEntrance: true,
+                                onOpen: _open,
+                              ),
+                            ),
+                          ),
+                        if (mixed)
+                          SliverPadding(
+                            padding: const EdgeInsets.fromLTRB(24, 20, 24, 16),
+                            sliver: SliverToBoxAdapter(
+                              child: _localToolbarPaint(
+                                Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.stretch,
+                                  children: [
+                                    _collectionToolbar(
+                                      organization,
+                                      books.length,
+                                      region: true,
                                     ),
-                                  ),
-                                )
-                              : NovelRow(
-                                  novel: book,
-                                  coverHeroTag: tag,
-                                  onTap: () => _open(book, tag),
-                                  trailing: GlassIconButton(
-                                    icon: CupertinoIcons.ellipsis,
-                                    label: '整理 ${book.title}',
-                                    onPressed: () => _bookMenu(book),
-                                    liveGlass: _localRowGlassAction,
-                                  ),
+                                    _searchField(),
+                                  ],
                                 ),
-                        );
-                      },
+                              ),
+                            ),
+                          ),
+                        if (mixed && books.isEmpty)
+                          const SliverPadding(
+                            padding: EdgeInsets.fromLTRB(24, 20, 24, 24),
+                            sliver: SliverToBoxAdapter(
+                              child: AppText('下方暂无符合条件的书籍，换个分类或关键词试试。'),
+                            ),
+                          ),
+                        SliverPadding(
+                          padding: const EdgeInsets.symmetric(horizontal: 24),
+                          sliver: BookCollectionSliver(
+                            shareRowGlass: !grid,
+                            grid: grid,
+                            gridDensity:
+                                organization?.gridDensity ??
+                                const BookGridDensity.auto(),
+                            gridBottomInset: widget.showHeader
+                                ? MediaQuery.paddingOf(context).bottom + 32
+                                : DockLayout.scrollPaddingOf(context),
+                            onGridViewport: (v) => _gridViewport.value = v,
+                            itemCount: rows.length,
+                            itemBuilder: (context, index) {
+                              final book = rows[index],
+                                  tag = ValueKey(
+                                    'local-cover-${rows[index].id}',
+                                  );
+                              return LoadedContentItem(
+                                key: ValueKey(book.id),
+                                index: index,
+                                placeholder: grid
+                                    ? const BookGridSkeleton()
+                                    : const BookRowSkeleton(),
+                                child: grid
+                                    ? BookGridTile(
+                                        key: ValueKey(
+                                          'local-grid-book-${book.id}',
+                                        ),
+                                        book: book,
+                                        coverHeroTag: tag,
+                                        onTap: () => _open(book, tag),
+                                        progress: _gridProgress(book),
+                                        trailing: GlassIconButton.custom(
+                                          label: '整理 ${book.title}',
+                                          onPressed: () => _bookMenu(book),
+                                          liveGlass: false,
+                                          transparent: true,
+                                          child: const ArchiveIcon(
+                                            CupertinoIcons.ellipsis,
+                                            size: 18,
+                                          ),
+                                        ),
+                                      )
+                                    : NovelRow(
+                                        novel: book,
+                                        coverHeroTag: tag,
+                                        onTap: () => _open(book, tag),
+                                        trailing: GlassIconButton(
+                                          icon: CupertinoIcons.ellipsis,
+                                          label: '整理 ${book.title}',
+                                          onPressed: () => _bookMenu(book),
+                                          liveGlass: _localRowGlassAction,
+                                        ),
+                                      ),
+                              );
+                            },
+                          ),
+                        ),
+                        SliverToBoxAdapter(
+                          child: SizedBox(
+                            height: widget.showHeader
+                                ? MediaQuery.paddingOf(context).bottom + 32
+                                : DockLayout.scrollPaddingOf(context),
+                          ),
+                        ),
+                      ],
                     ),
-                  ),
-                  SliverToBoxAdapter(
-                    child: SizedBox(
-                      height: widget.showHeader
-                          ? MediaQuery.paddingOf(context).bottom + 32
-                          : DockLayout.scrollPaddingOf(context),
-                    ),
-                  ),
-                ],
+                  );
+                },
               ),
-            );
-          },
+            ),
+          ],
         ),
       ),
     );

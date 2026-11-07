@@ -2174,17 +2174,37 @@ class LocalBookStore extends ChangeNotifier
       inferLocalSeries(_books[id]?.title ?? '') ??
       inferLocalSeries(_sources[id]?['name'] ?? '');
 
+  /// Explicit empty values suppress imported or inferred series names.
+  String? seriesName(int id) {
+    final series = seriesFor(id);
+    if (series != null) {
+      final name = series.seriesName ?? series.title;
+      return name.isEmpty ? null : name;
+    }
+    final metadata = _sources[id]?['userMetadata'] as Map?;
+    if (metadata?.containsKey('seriesName') == true) {
+      final name = metadata!['seriesName'] as String;
+      return name.isEmpty ? null : name;
+    }
+    return seriesHint(id)?.title;
+  }
+
+  bool isOmnibus(int id) =>
+      _seriesBooks.containsKey(id) ||
+      _sources[id]?['userMetadata']?['isOmnibus'] == true;
+
   List<Novel> relatedVolumes(int id) {
-    final hint = seriesHint(id);
-    if (hint == null || seriesFor(id) != null) return const [];
+    final name = seriesName(id);
+    if (name == null || seriesFor(id) != null || isOmnibus(id)) {
+      return const [];
+    }
     final author = _books[id]?.author ?? '';
     bool matches(Novel b) {
-      final hints = _seriesBooks.containsKey(b.id)
-          ? _series[b.id]!.volumes.map((v) => seriesHint(v.bookId))
-          : [seriesHint(b.id)];
+      if (!_seriesBooks.containsKey(b.id) && isOmnibus(b.id)) return false;
+      final otherName = seriesName(b.id);
       final sameTitle =
-          seriesTitleKey(b.title) == hint.key ||
-          hints.any((h) => h?.key == hint.key);
+          otherName != null &&
+          seriesTitleKey(otherName) == seriesTitleKey(name);
       return sameTitle &&
           (author == '本地书籍' ||
               b.author == '本地书籍' ||
@@ -2730,6 +2750,7 @@ class LocalBookStore extends ChangeNotifier
         author: previous?.author ?? first.author,
         summary: previous?.summary ?? first.summary,
         tags: previous?.tags,
+        seriesName: previous?.seriesName,
         volumes: List.unmodifiable(members),
         nextChapterId: nextChapter,
         updatedAt: max(now, (previous?.updatedAt ?? 0) + 1),
@@ -2776,7 +2797,10 @@ class LocalBookStore extends ChangeNotifier
                       series.toJson(),
                     ).compareTo(jsonEncode(old.toJson())) >
                     0)) {
-          next[series.id] = series.copyWith(tags: series.tags ?? old?.tags);
+          next[series.id] = series.copyWith(
+            tags: series.tags ?? old?.tags,
+            seriesName: series.seriesName ?? old?.seriesName,
+          );
         }
       }
       await _writeSeries(next);
@@ -2808,11 +2832,19 @@ class LocalBookStore extends ChangeNotifier
           v['at'] < 0) {
         throw const FormatException('书名限 160 字，作者限 160 字，简介限 4000 字');
       }
+      if ((v.containsKey('seriesName') &&
+              (v['seriesName'] is! String || v['seriesName'].length > 160)) ||
+          (v.containsKey('isOmnibus') && v['isOmnibus'] is! bool)) {
+        throw const FormatException('系列名称限 160 字，合订本标记必须为布尔值');
+      }
       result['$id'] = {
         'title': v['title'].trim(),
         'author': v['author'].trim(),
         'summary': v['summary'].trim(),
         if (v.containsKey('tags')) 'tags': decodeBookTags(v['tags']),
+        if (v.containsKey('seriesName'))
+          'seriesName': (v['seriesName'] as String).trim(),
+        if (v.containsKey('isOmnibus')) 'isOmnibus': v['isOmnibus'],
         'at': v['at'],
       };
     }
@@ -2831,21 +2863,26 @@ class LocalBookStore extends ChangeNotifier
   Future<void> _writeMetadata(int id, Map<String, dynamic> value) async {
     final current = _books[id];
     if (current == null) return;
-    // Older clients have no tags field. Their title edits must not clear tags
-    // already saved on this device, including the next backup's metadata.
+    // Older clients omit optional fields. Preserve metadata already saved on
+    // this device when restoring their backups or applying their title edits.
     final previous = _sources[id]?['userMetadata'] as Map?;
     final metadata = {
       ...value,
-      if (!value.containsKey('tags') && previous?.containsKey('tags') == true)
-        'tags': previous!['tags'],
+      for (final key in ['tags', 'seriesName', 'isOmnibus'])
+        if (!value.containsKey(key) && previous?.containsKey(key) == true)
+          key: previous![key],
     };
     final changed = Novel.fromSnapshot({
       ...current.toSnapshot(),
       'title': value['title'],
       'author': value['author'],
       'summary': value['summary'],
-      if (metadata.containsKey('tags'))
-        'genre': localBookGenre((metadata['tags'] as List).cast<String>()),
+      'genre': localBookGenre(
+        metadata.containsKey('tags')
+            ? (metadata['tags'] as List).cast<String>()
+            : current.tags,
+        series: metadata['isOmnibus'] == true,
+      ),
     }).withChapters(current.chapters);
     final source = {..._sources[id]!, 'userMetadata': metadata};
     final target = File('${directory.path}/$id/book.json');
@@ -2871,10 +2908,15 @@ class LocalBookStore extends ChangeNotifier
     required String author,
     required String summary,
     Iterable<String>? tags,
+    String? seriesName,
+    bool? isOmnibus,
   }) async {
     late Novel result;
     final work = _writes.catchError((Object _) {}).then((_) async {
       if (!contains(id)) throw const FormatException('本地书籍已不存在');
+      if (_seriesBooks.containsKey(id) && isOmnibus == false) {
+        throw const FormatException('多卷合订本需在管理分卷中解散，不能直接取消合订标记');
+      }
       final previousAt = (_sources[id]?['userMetadata']?['at'] as int?) ?? 0;
       final now = DateTime.now().millisecondsSinceEpoch;
       final valid = validateMetadata({
@@ -2883,6 +2925,8 @@ class LocalBookStore extends ChangeNotifier
           'author': author,
           'summary': summary,
           'tags': normalizeBookTags(tags ?? book(id)!.tags),
+          'seriesName': ?seriesName,
+          'isOmnibus': ?isOmnibus,
           'at': now > previousAt ? now : previousAt + 1,
         },
       });
@@ -2895,6 +2939,7 @@ class LocalBookStore extends ChangeNotifier
             author: value['author'],
             summary: value['summary'],
             tags: (value['tags'] as List).cast<String>(),
+            seriesName: value['seriesName'] as String?,
             updatedAt: max(value['at'] as int, _series[id]!.updatedAt + 1),
           ),
         });

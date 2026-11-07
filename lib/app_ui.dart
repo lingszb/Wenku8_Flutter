@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:math' as math;
+
 import 'library_reflow.dart';
+
 import 'package:flutter/foundation.dart' show ValueListenable;
 
 import 'package:flutter/cupertino.dart';
@@ -1546,8 +1548,43 @@ class NovelCover extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cover = _visual();
-    Widget warning(Widget child) =>
-        LocalBookImportWarningCover(book: novel, width: width, child: child);
+    Widget warning(Widget child) => LocalBookImportWarningCover(
+      book: novel,
+      width: width,
+      child: novel.genre.split(' ').contains('本地合订本')
+          ? Stack(
+              children: [
+                child,
+                Positioned(
+                  right: 4,
+                  bottom: 4,
+                  child: Semantics(
+                    label: '合订本',
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).colorScheme.surface,
+                        borderRadius: BorderRadius.circular(3),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 4,
+                          vertical: 2,
+                        ),
+                        child: Text(
+                          '合订',
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: Theme.of(context).colorScheme.onSurface,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            )
+          : child,
+    );
     if (heroTag == null || MediaQuery.disableAnimationsOf(context)) {
       return warning(cover);
     }

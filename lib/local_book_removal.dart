@@ -52,9 +52,6 @@ Future<LocalBooksRemovalResult> removeLocalBooks({
   required LibraryState library,
   void Function(int completed, int total)? onProgress,
 }) async {
-  if (choice == LocalBookRemoval.shelfOnly) {
-    throw const FormatException('仅移出功能已取消，书籍和文件未变动');
-  }
   final selected = ids.where(isLocalBook).where(books.contains).toSet();
   final targets = selected
       .where((id) {
@@ -65,7 +62,13 @@ Future<LocalBooksRemovalResult> removeLocalBooks({
   final removed = <int>{}, failed = <int>{};
   for (final (index, id) in targets.indexed) {
     try {
-      await removeLocalBook(books: books, library: library, id: id);
+      if (choice == LocalBookRemoval.files) {
+        await removeLocalBook(books: books, library: library, id: id);
+      } else {
+        // Hide the virtual collection too; original records remain untouched.
+        await library.setLocalBookHidden(id, true);
+        await library.setShelfMembership(id, false);
+      }
       removed.add(id);
     } catch (_) {
       failed.add(id);

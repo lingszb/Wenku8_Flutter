@@ -147,6 +147,7 @@ key.properties
 !/test/reading_artwork_test.dart
 !/test/fork_release_update_test.dart
 !/test/local_scan_test.dart
+!/test/local_book_metadata_test.dart
 !/test/shelf_category_picker_test.dart
 /integration_test/
 /test_driver/
@@ -175,3 +176,4 @@ key.properties
 # Local agent collaboration documents stay out of the tracked public tree.
 /AGENTS.md
 /CLAUDE.md
+!/test/local_book_batch_test.dart

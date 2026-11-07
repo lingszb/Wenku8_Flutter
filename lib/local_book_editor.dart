@@ -1,5 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+
 import 'app_ui.dart';
 import 'app_interactions.dart' show pushNovelPage, showNovelFeedback;
 import 'catalog.dart';
@@ -36,7 +37,11 @@ class LocalBookEditor extends StatefulWidget {
 
 class _LocalBookEditorState extends State<LocalBookEditor> {
   late final _title = TextEditingController(text: widget.book.title),
-      _author = TextEditingController(text: widget.book.author);
+      _author = TextEditingController(text: widget.book.author),
+      _seriesName = TextEditingController(
+        text: widget.books.seriesName(widget.book.id) ?? '',
+      );
+  late bool _isOmnibus = widget.books.isOmnibus(widget.book.id);
   late List<String> _tags = normalizeBookTags(widget.book.tags);
   LocalLibraryPreferences? _groups;
   String _group = LocalLibraryPreferences.unfiled;
@@ -145,6 +150,7 @@ class _LocalBookEditorState extends State<LocalBookEditor> {
   void dispose() {
     _title.dispose();
     _author.dispose();
+    _seriesName.dispose();
     super.dispose();
   }
 
@@ -192,6 +198,8 @@ class _LocalBookEditorState extends State<LocalBookEditor> {
         author: _author.text,
         summary: widget.book.summary,
         tags: _tags,
+        seriesName: _seriesName.text,
+        isOmnibus: _isOmnibus,
       );
       await groups.assign(updated.id, _group);
       await widget.library.setShelfMembership(
@@ -344,7 +352,7 @@ class _LocalBookEditorState extends State<LocalBookEditor> {
               ),
               const SizedBox(height: 7),
               AppText(
-                '${series == null ? '本地书籍' : '${series.volumes.length} 卷合订本'} · ${book.chapters.length} 章',
+                '${series == null ? (_isOmnibus ? '合订本' : '本地书籍') : '${series.volumes.length} 卷合订本'} · ${book.chapters.length} 章',
                 style: TextStyle(
                   fontSize: 12,
                   color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -400,6 +408,28 @@ class _LocalBookEditorState extends State<LocalBookEditor> {
           controller: _author,
           inputKey: const ValueKey('local-edit-作者'),
           enabled: !_busy,
+        ),
+        const SizedBox(height: 20),
+        LocalBookEditField(
+          label: '系列',
+          controller: _seriesName,
+          inputKey: const ValueKey('local-edit-系列'),
+          enabled: !_busy,
+        ),
+        const SizedBox(height: 20),
+        SwitchListTile.adaptive(
+          key: const ValueKey('local-edit-omnibus'),
+          contentPadding: EdgeInsets.zero,
+          title: const AppText('合订本'),
+          subtitle: AppText(
+            series == null
+                ? '适用于导入前已合并的书籍，仅修改标记，不改变正文'
+                : '由多个分卷组成；如需取消合订，请在管理分卷中解散',
+          ),
+          value: _isOmnibus,
+          onChanged: _busy || series != null
+              ? null
+              : (value) => setState(() => _isOmnibus = value),
         ),
         const SizedBox(height: 20),
         LocalBookTagsEditor(

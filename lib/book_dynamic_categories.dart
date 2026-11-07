@@ -39,11 +39,7 @@ abstract final class BookDynamicCategories {
       _add(groups, LocalLibraryPreferences.authorCategory(name), name);
     }
     for (var i = 0; i < unknownCount; i++) {
-      _add(
-        groups,
-        LocalLibraryPreferences.authorCategory('未知作者'),
-        '未知作者',
-      );
+      _add(groups, LocalLibraryPreferences.authorCategory('未知作者'), '未知作者');
     }
     return _sorted(groups);
   }
@@ -65,15 +61,13 @@ abstract final class BookDynamicCategories {
   }
 
   static String? seriesKey(Novel book, LocalBookStore? local) {
-    if (local?.seriesFor(book.id) case final series?) {
-      return seriesTitleKey(series.title);
-    }
-    return (local?.seriesHint(book.id) ?? inferLocalSeries(book.title))?.key;
+    final name = seriesName(book, local);
+    return name == null ? null : seriesTitleKey(name);
   }
 
   static String? seriesName(Novel book, LocalBookStore? local) {
-    if (local?.seriesFor(book.id) case final series?) return series.title;
-    return (local?.seriesHint(book.id) ?? inferLocalSeries(book.title))?.title;
+    if (local?.contains(book.id) == true) return local!.seriesName(book.id);
+    return inferLocalSeries(book.title)?.title;
   }
 
   static Map<String, BookCategoryCount> series(
