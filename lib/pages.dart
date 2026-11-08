@@ -5204,7 +5204,7 @@ class ReaderPage extends StatefulWidget {
   final bool directEntry;
 
   /// Startup loading keeps one cover above both catalogue and chapter loading.
-  /// True means the initial article laid out; false reveals its error state.
+  /// True means pagination/scroll restoration settled; false reveals an error.
   final ValueChanged<bool>? onInitialContentSettled;
   final ReaderBookmark? initialBookmark;
   final ReadingPosition? initialPosition;
@@ -5230,6 +5230,9 @@ class _ReaderPageState extends State<ReaderPage>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) widget.onInitialContentSettled?.call(success);
     });
+    // Pagination and scroll restoration can finish in a post-frame callback.
+    // Static/reduced-motion readers must still paint the cover handoff.
+    WidgetsBinding.instance.ensureVisualUpdate();
   }
 
   ReaderPreferences get _readerPreferences =>
@@ -7524,6 +7527,7 @@ class _ReaderPageState extends State<ReaderPage>
     _listeningChanged();
     _saveWhenIdle();
     _scheduleAutoPage();
+    _settleInitialContent(true);
   }
 
   double _scrollReadingInset(ReaderPreferences preferences) =>
@@ -8566,6 +8570,7 @@ class _ReaderPageState extends State<ReaderPage>
       _revealChapter();
       _landBookmark(saved, paragraphIndex: landingParagraph);
       _savePosition();
+      _settleInitialContent(true);
     });
   }
 
@@ -9987,7 +9992,7 @@ class _ReaderPageState extends State<ReaderPage>
             final failed =
                 snapshot.connectionState == ConnectionState.done &&
                 (snapshot.hasError || snapshot.data?.error != null);
-            if (ready || failed) _settleInitialContent(ready);
+            if (failed) _settleInitialContent(false);
             _ready = ready;
             if (ready) {
               _restoreAfterLayout();
@@ -10123,6 +10128,8 @@ class _ReaderPageState extends State<ReaderPage>
                               padding: pagedPadding,
                               reduceMotion: widget.state.reduceMotion,
                               onReady: _pagedReady,
+                              onLayoutFailed: () =>
+                                  _settleInitialContent(false),
                               onChanged: _pagedReadingChanged,
                               onUserScroll: () {
                                 _armPageAdvance();

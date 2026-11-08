@@ -302,6 +302,7 @@ class ReaderPagedView extends StatefulWidget {
     this.onChapterTurned,
     this.bookTitle,
     this.chrome,
+    this.onLayoutFailed,
   });
   final ReaderContent content;
   final ReaderPreferences preferences;
@@ -329,6 +330,9 @@ class ReaderPagedView extends StatefulWidget {
   final String Function(ReaderTextAnchor)? titleForAnchor;
   final Widget Function(Widget child)? backgroundBuilder;
   final VoidCallback onReady, onChanged, onUserScroll;
+
+  /// A failed layout keeps its retry UI visible to loading overlays.
+  final VoidCallback? onLayoutFailed;
   final ValueChanged<int> onBoundary;
   final ReadingPosition? position;
   final bool reduceMotion;
@@ -1023,6 +1027,7 @@ class _ReaderPagedViewState extends State<ReaderPagedView>
           _layoutFailed = true;
           _layingOut = false;
         });
+        widget.onLayoutFailed?.call();
       }
       return;
     }
