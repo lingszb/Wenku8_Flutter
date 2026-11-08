@@ -21,12 +21,14 @@ void main() {
 
     SharedPreferences.setMockInitialValues({});
     final state = LibraryState(await SharedPreferences.getInstance());
-    final root = await Directory.systemTemp.createTemp('local-header-history-');
+    // Widget tests use fake async; real asynchronous I/O cannot complete there.
+    final output = Directory('.tmp/verification')..createSync(recursive: true);
+    final root = output.createTempSync('local-header-history-');
     final books = LocalBookStore(root);
-    addTearDown(() async {
+    addTearDown(() {
       books.dispose();
       state.dispose();
-      await root.delete(recursive: true);
+      root.deleteSync(recursive: true);
     });
 
     await tester.pumpWidget(
@@ -50,8 +52,14 @@ void main() {
     expect(import, findsOneWidget);
     expect(history, findsOneWidget);
     expect(search, findsOneWidget);
-    expect(tester.getTopLeft(import).dx, lessThan(tester.getTopLeft(history).dx));
-    expect(tester.getTopLeft(history).dx, lessThan(tester.getTopLeft(search).dx));
+    expect(
+      tester.getTopLeft(import).dx,
+      lessThan(tester.getTopLeft(history).dx),
+    );
+    expect(
+      tester.getTopLeft(history).dx,
+      lessThan(tester.getTopLeft(search).dx),
+    );
 
     await tester.tap(history);
     await tester.pumpAndSettle();
