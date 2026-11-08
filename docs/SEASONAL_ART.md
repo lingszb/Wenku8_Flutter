@@ -20,6 +20,7 @@
 - `lib/reading_export_theme.dart` 和 `lib/reading_visual_theme.dart` 选择背景；`lib/reading_keepsake_theme.dart` 适配纪念主题。
 - `lib/reading_artwork.dart` 的 `loadReadingArtwork` / `ReadingArtworkImage` 统一处理资源解码与确定性纸面山线 PNG 回退。
 - 纪念内容、离屏导出和 `lib/quote_card.dart` 共用背景决策；替换资源时同时核对 `pubspec.yaml`、源码清单和预览 / PNG 导出，不只更改缩略图。
+- 桌面小组件的应用内预览与发布 PNG 由 `lib/reading_widget_reference.dart` 共用绘制器，按快照的 `localDay` 复用上述四季资源与统一回退；今日、本周、日历、纪念和摘录保留各自内容。明暗外观独立绘制，未记录数据保留为空值，隐藏书籍详情时不绘制书名。
 - 图片不存在或损坏不应阻断文字内容；权限、分享和真实渲染错误仍应报告。基础统计报告页不因此获得完整报告编辑 / 导出能力。
 
 ## 验证边界

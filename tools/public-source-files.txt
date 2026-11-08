@@ -1038,3 +1038,5 @@ lib/local_import_groups.dart
 test/local_book_batch_test.dart
 test/local_reading_history_shortcut_test.dart
 test/reader_image_pagination_test.dart
+test/book_display_test.dart
+test/startup_reader_test.dart

@@ -177,3 +177,6 @@ key.properties
 /AGENTS.md
 /CLAUDE.md
 !/test/local_book_batch_test.dart
+
+!/test/book_display_test.dart
+!/test/startup_reader_test.dart

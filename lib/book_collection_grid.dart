@@ -18,13 +18,16 @@ class BookGridTile extends StatelessWidget {
     this.coverHeroTag,
     this.sourceLabel,
     this.progress,
+    this.progressValue,
+    this.seriesLabel,
   });
 
   final Novel book;
   final VoidCallback onTap;
   final Widget trailing;
   final Object? coverHeroTag;
-  final String? sourceLabel, progress;
+  final String? sourceLabel, progress, seriesLabel;
+  final double? progressValue;
 
   Widget _cover(double width, double height) => SizedBox(
     height: height,
@@ -82,18 +85,22 @@ class BookGridTile extends StatelessWidget {
                       color: Theme.of(context).colorScheme.onSurfaceVariant,
                     ),
                   ),
-                  if (progress != null) ...[
+                  if (seriesLabel != null) ...[
                     const SizedBox(height: 4),
                     AppText(
-                      progress!,
+                      seriesLabel!,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         fontSize: 12,
                         height: 1.4,
-                        color: Theme.of(context).colorScheme.primary,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
                       ),
                     ),
+                  ],
+                  if (progress != null) ...[
+                    const SizedBox(height: 4),
+                    BookReadingProgress(label: progress!, value: progressValue),
                   ],
                 ],
               ),
@@ -264,4 +271,37 @@ class BookGridFailure extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Shared label and optional determinate bar for local list and grid metadata.
+class BookReadingProgress extends StatelessWidget {
+  const BookReadingProgress({super.key, required this.label, this.value});
+  final String label;
+  final double? value;
+  @override
+  Widget build(BuildContext context) => Column(
+    mainAxisSize: MainAxisSize.min,
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      AppText(
+        label,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          fontSize: 12,
+          height: 1.4,
+          color: Theme.of(context).colorScheme.primary,
+        ),
+      ),
+      if (value != null) ...[
+        const SizedBox(height: 4),
+        LinearProgressIndicator(
+          value: value!.clamp(0, 1),
+          minHeight: 3,
+          borderRadius: BorderRadius.circular(2),
+          semanticsLabel: label,
+        ),
+      ],
+    ],
+  );
 }

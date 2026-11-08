@@ -38,10 +38,13 @@ class BookCollectionSliver extends StatefulWidget {
     this.gridDensity = const BookGridDensity.auto(),
     this.gridBottomInset = 0,
     this.onGridViewport,
+    this.gridShowSeries = false,
+    this.gridShowProgressBar = false,
   });
   final int itemCount;
   final IndexedWidgetBuilder itemBuilder;
   final bool grid;
+  final bool gridShowSeries, gridShowProgressBar;
   final BookGridDensity gridDensity;
   final double gridBottomInset;
   final ValueChanged<BookGridViewport>? onGridViewport;
@@ -108,6 +111,8 @@ class _BookCollectionSliverState extends State<BookCollectionSliver> {
                       widget.gridBottomInset)
                   .clamp(0.0, double.infinity),
           textScaler: MediaQuery.textScalerOf(context),
+          showSeries: widget.gridShowSeries,
+          showProgressBar: widget.gridShowProgressBar,
         );
         _geometry = viewport.resolve(widget.gridDensity);
         if (_viewportKey != viewport.layoutKey) {

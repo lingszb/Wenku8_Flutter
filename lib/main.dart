@@ -402,7 +402,12 @@ class _NovelAppState extends State<NovelApp> with WidgetsBindingObserver {
       unawaited(
         pushNovelPage<void>(
           _navigator.currentState!.overlay!.context,
-          ReaderLoaderPage(novel: book, state: state, repository: repository),
+          ReaderLoaderPage(
+            novel: book,
+            state: state,
+            repository: repository,
+            openingCover: true,
+          ),
           reduceMotion: state.reduceMotion,
           slot: ('startup-reading', id),
         ),

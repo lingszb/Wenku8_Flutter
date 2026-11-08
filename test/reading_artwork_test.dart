@@ -10,6 +10,10 @@ import 'package:wenku8_flutter/reading_moment_content.dart';
 import 'package:wenku8_flutter/reading_moment_export.dart';
 import 'package:wenku8_flutter/reading_moments.dart';
 import 'package:wenku8_flutter/reading_visual_theme.dart';
+import 'package:wenku8_flutter/reading_widget_reference.dart';
+import 'package:wenku8_flutter/reading_widget_snapshot.dart';
+import 'package:wenku8_flutter/reading_widget_design.dart';
+import 'package:wenku8_flutter/reading_widget_skin.dart';
 
 class _ArtworkBundle extends CachingAssetBundle {
   _ArtworkBundle(this.bytes);
@@ -43,6 +47,112 @@ Future<Uint8List> _png() async {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  test(
+    'desktop designs export distinct seasonal faces and appearances',
+    () async {
+      final day = DateTime(2026, 11, 7);
+      final base = ReadingWidgetSnapshot(
+        generatedAt: day,
+        localDay: day,
+        verifiedTotalSeconds: 7200,
+        verifiedTodaySeconds: 600,
+        qualifiedStreakDays: 2,
+        week: [
+          for (var i = 0; i < 7; i++)
+            ReadingWidgetDay(
+              date: DateTime(2026, 11, 1 + i),
+              verifiedSeconds: i * 100,
+            ),
+        ],
+        dailyGoalMinutes: 30,
+        latestCompletion: ReadingWidgetCompletion(
+          completedAt: day,
+          title: 'Private book',
+        ),
+      );
+      final designs = <String>{};
+      for (final design in ReadingWidgetDesign.values.where(
+        (v) => v != ReadingWidgetDesign.classic,
+      )) {
+        final data = base.styled(
+          design: design,
+          skin: ReadingWidgetSkin.seasons,
+          showBookDetails: false,
+        );
+        final light = await renderReadingDesktopCard(
+          data,
+          ReadingDesktopSize.medium,
+          brightness: Brightness.light,
+        );
+        final dark = await renderReadingDesktopCard(
+          data,
+          ReadingDesktopSize.medium,
+          brightness: Brightness.dark,
+        );
+        expect(light, isNot(orderedEquals(dark)));
+        designs.add(light.join(','));
+        final codec = await ui.instantiateImageCodec(light);
+        final frame = await codec.getNextFrame();
+        expect(frame.image.width, 600);
+        expect(frame.image.height, 288);
+        frame.image.dispose();
+        codec.dispose();
+      }
+      expect(designs.length, 5);
+    },
+  );
+
+  testWidgets(
+    'desktop preview fits every family and redacts private book details',
+    (tester) async {
+      final day = DateTime(2026, 11, 7);
+      final base = ReadingWidgetSnapshot(
+        generatedAt: day,
+        localDay: day,
+        verifiedTotalSeconds: null,
+        verifiedTodaySeconds: null,
+        qualifiedStreakDays: null,
+        week: [
+          for (var i = 0; i < 7; i++)
+            ReadingWidgetDay(
+              date: DateTime(2026, 11, 1 + i),
+              verifiedSeconds: null,
+            ),
+        ],
+        latestCompletion: ReadingWidgetCompletion(
+          completedAt: day,
+          title: 'Private book',
+        ),
+      );
+      final semantics = tester.ensureSemantics();
+      for (final size in ReadingDesktopSize.values) {
+        for (final design in ReadingWidgetDesign.values) {
+          await tester.pumpWidget(
+            MaterialApp(
+              home: Scaffold(
+                body: Center(
+                  child: ReadingDesktopCard(
+                    data: base.styled(
+                      design: design,
+                      skin: ReadingWidgetSkin.seasons,
+                      showBookDetails: false,
+                    ),
+                    size: size,
+                    brightness: Brightness.light,
+                  ),
+                ),
+              ),
+            ),
+          );
+          await tester.pumpAndSettle();
+          expect(find.bySemanticsLabel('Private book'), findsNothing);
+          expect(tester.takeException(), isNull);
+        }
+      }
+      semantics.dispose();
+    },
+  );
 
   test(
     'all persisted themes resolve each recorded month to the same season',

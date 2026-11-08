@@ -16,6 +16,8 @@ import 'local_book_series.dart';
 
 enum LocalLibraryView { shelf, list, grid, shelfGrid }
 
+enum BookProgressDisplay { percentage, pages }
+
 enum LocalLibrarySort { recentAdded, recentRead, title }
 
 typedef _AssignmentState = ({String group, int at, bool available});
@@ -39,7 +41,9 @@ class LocalLibraryPreferences extends ChangeNotifier {
   static String? _dynamicValue(String category, String prefix) {
     if (!category.startsWith(prefix)) return null;
     try {
-      final value = Uri.decodeComponent(category.substring(prefix.length)).trim();
+      final value = Uri.decodeComponent(
+        category.substring(prefix.length),
+      ).trim();
       return value.isEmpty ? null : value;
     } on FormatException {
       return null;
@@ -78,19 +82,15 @@ class LocalLibraryPreferences extends ChangeNotifier {
   }
 
   /// Dynamic queries are read-only views; only named groups own assignments.
-  bool matchesCategory(
-    Novel book,
-    String category, {
-    String? seriesKey,
-  }) {
+  bool matchesCategory(Novel book, String category, {String? seriesKey}) {
     if (categoryAuthor(category) case final author?) {
       return authorName(book.author) == author;
     }
     if (category == noTag) return normalizeBookTags([book.genre]).isEmpty;
     if (categoryTag(category) case final tag?) {
-      return normalizeBookTags([book.genre]).any(
-        (value) => bookTagKey(value) == tag,
-      );
+      return normalizeBookTags([
+        book.genre,
+      ]).any((value) => bookTagKey(value) == tag);
     }
     final currentSeries = seriesKey ?? inferLocalSeries(book.title)?.key;
     if (category == noSeries) {
@@ -108,6 +108,9 @@ class LocalLibraryPreferences extends ChangeNotifier {
   BookShelfPreferences shelfPreferences = const BookShelfPreferences.defaults();
   BookShelfContentPreferences shelfContent =
       const BookShelfContentPreferences.defaults();
+  bool showProgressBar = true;
+  bool showSeries = true;
+  BookProgressDisplay progressDisplay = BookProgressDisplay.percentage;
   LocalLibrarySort sort = LocalLibrarySort.recentAdded;
   String selected = all;
   String readingFilter = 'all';
@@ -233,6 +236,11 @@ class LocalLibraryPreferences extends ChangeNotifier {
       (v) => v.name == raw['view'],
       orElse: () => LocalLibraryView.shelf,
     );
+    showProgressBar = raw['showProgressBar'] != false;
+    showSeries = raw['showSeries'] != false;
+    progressDisplay = raw['progressDisplay'] == 'pages'
+        ? BookProgressDisplay.pages
+        : BookProgressDisplay.percentage;
     gridDensity = BookGridDensity.parseOrAuto(raw['gridDensity']);
     shelfPreferences = BookShelfPreferences.parseOrDefault(
       raw['shelfPreferences'],
@@ -451,6 +459,9 @@ class LocalLibraryPreferences extends ChangeNotifier {
     'version': 1,
     'view': view.name,
     'gridDensity': gridDensity.value,
+    'showProgressBar': showProgressBar,
+    'showSeries': showSeries,
+    'progressDisplay': progressDisplay.name,
     'shelfPreferences': shelfPreferences.toJson(),
     'shelfContent': (content ?? shelfContent).toJson(),
     'sort': sort.name,
@@ -489,6 +500,21 @@ class LocalLibraryPreferences extends ChangeNotifier {
     BookCollectionMode.shelfGrid => LocalLibraryView.shelfGrid,
     BookCollectionMode.grid => LocalLibraryView.grid,
   });
+
+  Future<void> setShowProgressBar(bool value) {
+    showProgressBar = value;
+    return _save();
+  }
+
+  Future<void> setShowSeries(bool value) {
+    showSeries = value;
+    return _save();
+  }
+
+  Future<void> setProgressDisplay(BookProgressDisplay value) {
+    progressDisplay = value;
+    return _save();
+  }
 
   Future<void> setGridDensity(BookGridDensity value) {
     gridDensity = value;
