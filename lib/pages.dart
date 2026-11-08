@@ -1044,20 +1044,51 @@ class ReaderLoaderPage extends StatefulWidget {
     required this.state,
     required this.repository,
     this.fromCache = false,
+    this.openingCover = false,
   });
   final Novel novel;
   final LibraryState state;
   final NovelRepository repository;
   final bool fromCache;
+  final bool openingCover;
   @override
   State<ReaderLoaderPage> createState() => _ReaderLoaderPageState();
 }
 
-class _ReaderLoaderPageState extends State<ReaderLoaderPage> {
+class _ReaderLoaderPageState extends State<ReaderLoaderPage>
+    with SingleTickerProviderStateMixin {
+  late final _opening =
+      AnimationController(vsync: this, duration: NovelMotion.enter)
+        ..addStatusListener((status) {
+          if (status == AnimationStatus.completed && mounted) setState(() {});
+        });
+  bool _openingSettled = false;
+
+  void _settleOpening(bool success) {
+    if (_openingSettled || !mounted) return;
+    _openingSettled = true;
+    if (!success ||
+        widget.state.reduceMotion ||
+        MediaQuery.disableAnimationsOf(context)) {
+      setState(() => _opening.value = 1);
+    } else {
+      _opening.forward();
+    }
+  }
+
+  @override
+  void dispose() {
+    _opening.dispose();
+    super.dispose();
+  }
+
   ReaderPreferences get _readerPreferences =>
       widget.state.readerPreferencesFor(widget.novel.id);
   late Future<Novel> _book = _load();
   Future<Novel> _load() async {
+    // Paint the launch cover before directory work begins. This yields to a
+    // real frame rather than adding a timer or delaying already-ready content.
+    if (widget.openingCover) await SchedulerBinding.instance.endOfFrame;
     Novel? book;
     if (widget.repository case final OfflineNovelRepository offline) {
       if (widget.fromCache || offline.offline) {
@@ -1077,93 +1108,192 @@ class _ReaderLoaderPageState extends State<ReaderLoaderPage> {
   }
 
   @override
-  Widget build(BuildContext context) => FutureBuilder<Novel>(
-    future: _book,
-    builder: (context, snapshot) {
-      if (snapshot.data case final book?) {
-        var chapter = widget.state.chapterForNovel(book);
-        if (widget.repository case final OfflineNovelRepository offline) {
-          if (offline.offline &&
-              !isLocalBook(book.id) &&
-              offline.cache
-                      .book(book.id)
-                      ?.chapterBytes
-                      .containsKey(book.chapters[chapter].id) !=
-                  true) {
-            final cached = book.chapters.indexWhere(
-              (c) =>
-                  offline.cache.book(book.id)?.chapterBytes.containsKey(c.id) ==
-                  true,
-            );
-            if (cached >= 0) chapter = cached;
+  Widget build(BuildContext context) {
+    final content = FutureBuilder<Novel>(
+      future: _book,
+      builder: (context, snapshot) {
+        if (snapshot.data case final book?) {
+          var chapter = widget.state.chapterForNovel(book);
+          if (widget.repository case final OfflineNovelRepository offline) {
+            if (offline.offline &&
+                !isLocalBook(book.id) &&
+                offline.cache
+                        .book(book.id)
+                        ?.chapterBytes
+                        .containsKey(book.chapters[chapter].id) !=
+                    true) {
+              final cached = book.chapters.indexWhere(
+                (c) =>
+                    offline.cache
+                        .book(book.id)
+                        ?.chapterBytes
+                        .containsKey(c.id) ==
+                    true,
+              );
+              if (cached >= 0) chapter = cached;
+            }
           }
+          return ReaderPage(
+            novel: book,
+            state: widget.state,
+            repository: widget.repository,
+            initialChapter: chapter,
+            directEntry: true,
+            onInitialContentSettled: widget.openingCover
+                ? _settleOpening
+                : null,
+          );
         }
-        return ReaderPage(
-          novel: book,
+        final preferences = _readerPreferences;
+        if (widget.openingCover && snapshot.hasError && !_openingSettled) {
+          WidgetsBinding.instance.addPostFrameCallback(
+            (_) => _settleOpening(false),
+          );
+        }
+        final chromeVisible = widget.state.readerChromeVisible;
+        return ReaderAppearance(
           state: widget.state,
-          repository: widget.repository,
-          initialChapter: chapter,
-          directEntry: true,
-        );
-      }
-      final preferences = _readerPreferences;
-      final chromeVisible = widget.state.readerChromeVisible;
-      return ReaderAppearance(
-        state: widget.state,
-        bookId: widget.novel.id,
-        appTheme: Theme.of(context),
-        child: Scaffold(
-          body: Atmosphere(
-            archiveBackdrop: false,
-            child: GlassHeaderLayout(
-              showHeader: chromeVisible || snapshot.hasError,
-              header: ArchiveHeaderBar(
-                leading: GlassIconButton(
-                  icon: CupertinoIcons.back,
-                  label: '返回',
-                  onPressed: () => Navigator.pop(context),
+          bookId: widget.novel.id,
+          appTheme: Theme.of(context),
+          child: Scaffold(
+            body: Atmosphere(
+              archiveBackdrop: false,
+              child: GlassHeaderLayout(
+                showHeader: chromeVisible || snapshot.hasError,
+                header: ArchiveHeaderBar(
+                  leading: GlassIconButton(
+                    icon: CupertinoIcons.back,
+                    label: '返回',
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                  title: ArchiveRouteTitle(
+                    title: widget.novel.title,
+                    code: 'READ / OPEN',
+                  ),
                 ),
-                title: ArchiveRouteTitle(
-                  title: widget.novel.title,
-                  code: 'READ / OPEN',
-                ),
-              ),
-              body: snapshot.hasError
-                  ? ContentNotice(
-                      icon: CupertinoIcons.exclamationmark_triangle,
-                      title: '暂时无法打开本书',
-                      message: snapshot.error is FormatException
-                          ? (snapshot.error as FormatException).message
-                          : '请检查网络或本机缓存后重试',
-                      onRetry: () => setState(() => _book = _load()),
-                    )
-                  : SafeArea(
-                      top:
-                          !(preferences.hideSystemStatus &&
-                              preferences.mode == ReaderMode.scroll),
-                      child: Padding(
-                        padding: EdgeInsets.fromLTRB(
-                          preferences.leftMargin,
-                          preferences.marginTop +
-                              (chromeVisible
-                                  ? FrostedHeader.toolbarHeight + 16
-                                  : 16),
-                          preferences.rightMargin,
-                          preferences.marginBottom + 24,
+                body: snapshot.hasError
+                    ? ContentNotice(
+                        icon: CupertinoIcons.exclamationmark_triangle,
+                        title: '暂时无法打开本书',
+                        message: snapshot.error is FormatException
+                            ? (snapshot.error as FormatException).message
+                            : '请检查网络或本机缓存后重试',
+                        onRetry: () => setState(() => _book = _load()),
+                      )
+                    : SafeArea(
+                        top:
+                            !(preferences.hideSystemStatus &&
+                                preferences.mode == ReaderMode.scroll),
+                        child: Padding(
+                          padding: EdgeInsets.fromLTRB(
+                            preferences.leftMargin,
+                            preferences.marginTop +
+                                (chromeVisible
+                                    ? FrostedHeader.toolbarHeight + 16
+                                    : 16),
+                            preferences.rightMargin,
+                            preferences.marginBottom + 24,
+                          ),
+                          child: ReaderSkeleton(
+                            vertical:
+                                _readerPreferences.mode == ReaderMode.vertical,
+                            expand: _readerPreferences.mode.paginated,
+                          ),
                         ),
-                        child: ReaderSkeleton(
-                          vertical:
-                              _readerPreferences.mode == ReaderMode.vertical,
-                          expand: _readerPreferences.mode.paginated,
+                      ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+    if (!widget.openingCover) return content;
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        ExcludeSemantics(excluding: !_openingSettled, child: content),
+        if (!_opening.isCompleted)
+          Positioned.fill(
+            child: AnimatedBuilder(
+              animation: _opening,
+              builder: (context, child) {
+                final progress = NovelMotion.ease.transform(_opening.value);
+                return IgnorePointer(
+                  ignoring: _openingSettled,
+                  child: ExcludeSemantics(
+                    excluding: _openingSettled,
+                    child: Opacity(
+                      opacity: 1 - progress,
+                      child: ColoredBox(
+                        color: Theme.of(context).colorScheme.surface,
+                        child: Center(
+                          child: SafeArea(
+                            child: LayoutBuilder(
+                              builder: (context, constraints) {
+                                final width = math.min(
+                                  220.0,
+                                  math.min(
+                                    constraints.maxWidth * .55,
+                                    constraints.maxHeight * .42,
+                                  ),
+                                );
+                                return SingleChildScrollView(
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 16,
+                                  ),
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Transform(
+                                        alignment: Alignment.centerLeft,
+                                        transform: Matrix4.identity()
+                                          ..setEntry(3, 2, .0015)
+                                          ..rotateY(-math.pi * .48 * progress),
+                                        child: RepaintBoundary(
+                                          child: NovelCover(
+                                            widget.novel,
+                                            width: width,
+                                            height: width * 1.4,
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(height: 24),
+                                      Padding(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 24,
+                                        ),
+                                        child: AppText(
+                                          widget.novel.title,
+                                          textAlign: TextAlign.center,
+                                          maxLines: 2,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 10),
+                                      const AppText('正在继续阅读…'),
+                                      const SizedBox(height: 16),
+                                      GlassTextButton(
+                                        onPressed: () =>
+                                            Navigator.maybePop(context),
+                                        child: const AppText('返回书库'),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
                         ),
                       ),
                     ),
+                  ),
+                );
+              },
             ),
           ),
-        ),
-      );
-    },
-  );
+      ],
+    );
+  }
 }
 
 void openReadingHistory(
@@ -1203,12 +1333,16 @@ class NovelRow extends StatelessWidget {
     this.trailing,
     this.coverHeroTag,
     this.sourceLabel,
+    this.seriesLabel,
+    this.progress,
+    this.progressValue,
   });
   final Novel novel;
   final VoidCallback onTap;
   final Widget? trailing;
   final Object? coverHeroTag;
-  final String? sourceLabel;
+  final String? sourceLabel, seriesLabel, progress;
+  final double? progressValue;
 
   @override
   Widget build(BuildContext context) => JellyTapSurface(
@@ -1268,6 +1402,22 @@ class NovelRow extends StatelessWidget {
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
                 ),
+                if (seriesLabel != null) ...[
+                  const SizedBox(height: 4),
+                  AppText(
+                    seriesLabel!,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+                if (progress != null) ...[
+                  const SizedBox(height: 6),
+                  BookReadingProgress(label: progress!, value: progressValue),
+                ],
               ],
             ),
           ),
@@ -2634,7 +2784,7 @@ class SettingsPage extends StatelessWidget {
             keyName: 'settings-open-recent-on-launch',
             icon: CupertinoIcons.clock,
             title: '启动时继续阅读',
-            description: '打开应用后进入最近读过的书',
+            description: '打开应用后继续最近阅读，准备书页时展示封面，完成后翻开',
             value: state.openRecentOnLaunch,
             onChanged: state.setOpenRecentOnLaunch,
           ),
@@ -5038,6 +5188,7 @@ class ReaderPage extends StatefulWidget {
     required this.repository,
     required this.initialChapter,
     this.directEntry = false,
+    this.onInitialContentSettled,
     this.initialBookmark,
     this.initialPosition,
     this.dictionaryLauncher,
@@ -5048,6 +5199,10 @@ class ReaderPage extends StatefulWidget {
   final NovelRepository repository;
   final int initialChapter;
   final bool directEntry;
+
+  /// Startup loading keeps one cover above both catalogue and chapter loading.
+  /// True means the initial article laid out; false reveals its error state.
+  final ValueChanged<bool>? onInitialContentSettled;
   final ReaderBookmark? initialBookmark;
   final ReadingPosition? initialPosition;
   final Future<bool> Function(String selectedText)? dictionaryLauncher;
@@ -5062,6 +5217,18 @@ class ReaderPage extends StatefulWidget {
 
 class _ReaderPageState extends State<ReaderPage>
     with TickerProviderStateMixin, WidgetsBindingObserver {
+  bool _initialContentSettled = false;
+
+  void _settleInitialContent(bool success) {
+    if (_initialContentSettled || widget.onInitialContentSettled == null) {
+      return;
+    }
+    _initialContentSettled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) widget.onInitialContentSettled?.call(success);
+    });
+  }
+
   ReaderPreferences get _readerPreferences =>
       widget.state.readerPreferencesFor(widget.novel.id);
   double get _fontSize => widget.state.readerFontSizeFor(widget.novel.id);
@@ -7164,6 +7331,8 @@ class _ReaderPageState extends State<ReaderPage>
             textScale: _textScale,
             typeface: position?.typeface ?? _layoutTypeface,
             contentRevision: _currentContent?.revision ?? '',
+            chapterPage: _paginated ? _paged.page + 1 : null,
+            chapterPages: _paginated ? _paged.pageCount : null,
           )
           .catchError((Object _) {}),
     );
@@ -9815,6 +9984,7 @@ class _ReaderPageState extends State<ReaderPage>
             final failed =
                 snapshot.connectionState == ConnectionState.done &&
                 (snapshot.hasError || snapshot.data?.error != null);
+            if (ready || failed) _settleInitialContent(ready);
             _ready = ready;
             if (ready) {
               _restoreAfterLayout();

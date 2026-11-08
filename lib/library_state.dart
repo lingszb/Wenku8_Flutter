@@ -53,6 +53,8 @@ class ReadingPosition {
     this.typeface = 'system',
     this.layout = '',
     this.contentRevision = '',
+    this.chapterPage,
+    this.chapterPages,
   });
   final int chapter;
   final int chapterId;
@@ -72,7 +74,12 @@ class ReadingPosition {
   final String layout;
   final String contentRevision;
 
+  /// Last measured chapter pagination, for display only. Never a resume anchor.
+  final int? chapterPage, chapterPages;
+
   Map<String, Object> toJson() => {
+    'chapterPage': ?chapterPage,
+    'chapterPages': ?chapterPages,
     'chapter': chapter,
     'chapterId': chapterId,
     'offset': offset,
@@ -97,6 +104,16 @@ class ReadingPosition {
     }
 
     return ReadingPosition(
+      chapterPage:
+          value['chapterPage'] is int &&
+              value['chapterPages'] is int &&
+              value['chapterPage'] >= 1 &&
+              value['chapterPage'] <= value['chapterPages']
+          ? value['chapterPage']
+          : null,
+      chapterPages: value['chapterPages'] is int && value['chapterPages'] > 0
+          ? value['chapterPages']
+          : null,
       chapter: value['chapter'] is int
           ? (value['chapter'] as int).clamp(0, 100000)
           : 0,
@@ -1156,6 +1173,45 @@ class LibraryState extends ChangeNotifier {
   int shelfRevision(int id) => _shelfRevisions[id] ?? 0;
   Map<int, int> get shelfRevisions => Map.unmodifiable(_shelfRevisions);
   int lastReadAt(int id) => _positions[id]?.updatedAt ?? 0;
+
+  /// Matches the reader's chapter-weighted whole-book progress.
+  double? readingFractionForNovel(Novel novel) {
+    if (!hasRead(novel.id)) return 0;
+    if (finishedReading(novel)) return 1;
+    final count = novel.chapters.isEmpty
+        ? novel.chapterCount
+        : novel.chapters.length;
+    if (count <= 0) return null;
+    return ((chapterForNovel(novel) + (positionFor(novel.id)?.fraction ?? 0)) /
+            count)
+        .clamp(0.0, 1.0);
+  }
+
+  String readingProgressLabel(Novel novel, {bool pages = false}) {
+    if (!hasRead(novel.id)) return '未读';
+    if (finishedReading(novel)) return '已读完';
+    if (pages) {
+      final position = positionFor(novel.id);
+      final count = novel.chapters.isEmpty
+          ? novel.chapterCount
+          : novel.chapters.length;
+      final chapter = chapterForNovel(novel);
+      final valid =
+          position?.chapterPage != null &&
+          position?.chapterPages != null &&
+          position!.chapter == chapter &&
+          (novel.chapters.isEmpty ||
+              position.chapterId == novel.chapters[chapter].id);
+      final prefix = count > 0
+          ? '第 ${chapter + 1}/$count 章'
+          : '第 ${chapter + 1} 章';
+      return valid
+          ? '$prefix · ${position.chapterPage}/${position.chapterPages} 页'
+          : '$prefix · 页码待分页';
+    }
+    final value = readingFractionForNovel(novel);
+    return value == null ? '已开始阅读' : '${(value * 100).toStringAsFixed(1)}%';
+  }
 
   bool finishedReading(Novel novel) {
     final position = positionFor(novel.id);
@@ -2947,6 +3003,8 @@ class LibraryState extends ChangeNotifier {
     double textScale = 1,
     String? typeface,
     String contentRevision = '',
+    int? chapterPage,
+    int? chapterPages,
   }) {
     if (_restoreBarrier case final barrier?) {
       return barrier.future.then(
@@ -2963,6 +3021,8 @@ class LibraryState extends ChangeNotifier {
           textScale: textScale,
           typeface: typeface,
           contentRevision: contentRevision,
+          chapterPage: chapterPage,
+          chapterPages: chapterPages,
         ),
       );
     }
@@ -2976,7 +3036,14 @@ class LibraryState extends ChangeNotifier {
         chapter >= novel.chapters.length) {
       return Future.value();
     }
+    final validPages =
+        chapterPage != null &&
+        chapterPages != null &&
+        chapterPage >= 1 &&
+        chapterPage <= chapterPages;
     final position = ReadingPosition(
+      chapterPage: validPages ? chapterPage : null,
+      chapterPages: validPages ? chapterPages : null,
       chapter: chapter,
       chapterId: novel.chapters[chapter].id,
       offset: offset.clamp(0, double.infinity),

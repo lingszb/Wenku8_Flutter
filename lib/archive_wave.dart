@@ -371,17 +371,10 @@ class _ArchiveFileCarouselState extends State<ArchiveFileCarousel>
                                             fontWeight: FontWeight.w700,
                                           ),
                                         ),
-                                        AppText(
-                                          '${book.author} · ${book.isComplete ? '已完结' : '连载中'}',
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: TextStyle(
-                                            fontSize: 12,
-                                            height: 1.4,
-                                            color: Theme.of(
-                                              context,
-                                            ).colorScheme.onSurfaceVariant,
-                                          ),
+                                        _authorLine(
+                                          context,
+                                          book,
+                                          fontSize: 12,
                                         ),
                                       ],
                                     ),
@@ -470,6 +463,50 @@ class _ArchiveFileCarouselState extends State<ArchiveFileCarousel>
     );
   }
 
+  Widget _authorLine(
+    BuildContext context,
+    Novel book, {
+    required double fontSize,
+  }) => ActiveListenableBuilder(
+    listenable: widget.library?.historyChanges ?? _active,
+    builder: (context) {
+      final progress = widget.library?.readingFractionForNovel(book);
+      final colors = Theme.of(context).colorScheme;
+      return Row(
+        children: [
+          Expanded(
+            child: AppText(
+              '${book.author} · ${book.isComplete ? '已完结' : '连载中'}',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: fontSize,
+                height: 1.5,
+                color: colors.onSurfaceVariant,
+              ),
+            ),
+          ),
+          if (progress != null) ...[
+            const SizedBox(width: 12),
+            SizedBox(
+              width: 64,
+              child: LinearProgressIndicator(
+                key: ValueKey('shelf-author-progress-${book.id}'),
+                value: progress,
+                minHeight: 3,
+                borderRadius: BorderRadius.circular(2),
+                color: colors.primary,
+                backgroundColor: colors.onSurface.withValues(alpha: .08),
+                semanticsLabel: '阅读进度（按章节计算）',
+                semanticsValue: '${(progress * 100).toStringAsFixed(1)}%',
+              ),
+            ),
+          ],
+        ],
+      );
+    },
+  );
+
   Widget _information(BuildContext context) => ActiveListenableBuilder(
     listenable: widget.library?.historyChanges ?? _active,
     builder: (context) => ValueListenableBuilder<int>(
@@ -550,12 +587,7 @@ class _ArchiveFileCarouselState extends State<ArchiveFileCarousel>
               const SizedBox(height: 12),
               SizedBox(
                 height: scaler.scale(14) * 1.5,
-                child: AppText(
-                  '${book.author} · ${book.isComplete ? '已完结' : '连载中'}',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 14, height: 1.5, color: muted),
-                ),
+                child: _authorLine(context, book, fontSize: 14),
               ),
               const SizedBox(height: 12),
               SizedBox(

@@ -626,6 +626,15 @@ class _LocalLibraryPageState extends State<LocalLibraryPage>
             mode: organization.viewMode,
             onModeChanged: (mode) =>
                 _save(() => organization.setViewMode(mode)),
+            showProgressBar: organization.showProgressBar,
+            showSeries: organization.showSeries,
+            progressDisplay: organization.progressDisplay,
+            onShowProgressBarChanged: (value) =>
+                _save(() => organization.setShowProgressBar(value)),
+            onShowSeriesChanged: (value) =>
+                _save(() => organization.setShowSeries(value)),
+            onProgressDisplayChanged: (value) =>
+                _save(() => organization.setProgressDisplay(value)),
             gridDensity: organization.gridDensity,
             shelfPreferences: organization.shelfPreferences,
             shelfContent: organization.shelfContent,
@@ -809,13 +818,20 @@ class _LocalLibraryPageState extends State<LocalLibraryPage>
     }
   }
 
-  String _gridProgress(Novel book) => !widget.state.hasRead(book.id)
-      ? '未读'
-      : widget.state.finishedReading(book)
-      ? '已读完'
-      : (book.chapters.isNotEmpty || book.chapterCount > 0)
-      ? '${widget.state.chapterForNovel(book) + 1}/${book.chapters.isNotEmpty ? book.chapters.length : book.chapterCount}'
-      : '第 ${widget.state.chapterFor(book.id) + 1} 章';
+  String _gridProgress(Novel book) => widget.state.readingProgressLabel(
+    book,
+    pages: _organization?.progressDisplay == BookProgressDisplay.pages,
+  );
+
+  double? _progressValue(Novel book) => _organization?.showProgressBar == false
+      ? null
+      : widget.state.readingFractionForNovel(book);
+
+  String? _seriesLabel(Novel book) {
+    if (_organization?.showSeries == false) return null;
+    final name = widget.books.seriesName(book.id);
+    return name == null || name.isEmpty ? null : '系列 · $name';
+  }
 
   @override
   void dispose() {
@@ -1066,6 +1082,9 @@ class _LocalLibraryPageState extends State<LocalLibraryPage>
                           sliver: BookCollectionSliver(
                             shareRowGlass: !grid,
                             grid: grid,
+                            gridShowSeries: organization?.showSeries ?? true,
+                            gridShowProgressBar:
+                                organization?.showProgressBar ?? true,
                             gridDensity:
                                 organization?.gridDensity ??
                                 const BookGridDensity.auto(),
@@ -1094,6 +1113,8 @@ class _LocalLibraryPageState extends State<LocalLibraryPage>
                                         coverHeroTag: tag,
                                         onTap: () => _open(book, tag),
                                         progress: _gridProgress(book),
+                                        progressValue: _progressValue(book),
+                                        seriesLabel: _seriesLabel(book),
                                         trailing: GlassIconButton.custom(
                                           label: '整理 ${book.title}',
                                           onPressed: () => _bookMenu(book),
@@ -1107,6 +1128,9 @@ class _LocalLibraryPageState extends State<LocalLibraryPage>
                                       )
                                     : NovelRow(
                                         novel: book,
+                                        progress: _gridProgress(book),
+                                        progressValue: _progressValue(book),
+                                        seriesLabel: _seriesLabel(book),
                                         coverHeroTag: tag,
                                         onTap: () => _open(book, tag),
                                         trailing: GlassIconButton(

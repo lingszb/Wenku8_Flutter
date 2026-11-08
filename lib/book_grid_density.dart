@@ -64,9 +64,11 @@ class BookGridViewport {
     required this.width,
     required this.height,
     required TextScaler textScaler,
-  }) : titleHeight = textScaler.scale(14) * 1.4 * 2,
-       authorHeight = textScaler.scale(12) * 1.4,
-       progressHeight = textScaler.scale(12) * 1.4,
+    this.showSeries = false,
+    this.showProgressBar = false,
+  }) : titleHeight = (textScaler.scale(14) * 1.4).ceilToDouble() * 2,
+       authorHeight = (textScaler.scale(12) * 1.4).ceilToDouble(),
+       progressHeight = (textScaler.scale(12) * 1.4).ceilToDouble(),
        minimumCellWidth = math.max(56.0, textScaler.scale(14) * 4),
        retryHeight = math.max(48.0, textScaler.scale(12) * 1.4 + 16),
        statusHeight = textScaler.scale(12) * 1.4 * 2 + 8;
@@ -74,10 +76,18 @@ class BookGridViewport {
   static const gap = 16.0, coverAspectRatio = 30 / 41;
   // Cover artwork and the metadata action lane have separate hit areas.
   static const minimumCoverWidth = 48.0;
+  final bool showSeries, showProgressBar;
   final double width, height;
   final double titleHeight, authorHeight, progressHeight, minimumCellWidth;
   final double retryHeight, statusHeight;
-  double get footerHeight => math.max(48.0, authorHeight + 4 + progressHeight);
+  double get footerHeight => math.max(
+    48.0,
+    authorHeight +
+        4 +
+        progressHeight +
+        (showSeries ? authorHeight + 4 : 0) +
+        (showProgressBar ? 7 : 0),
+  );
   double get metadataHeight => math.max(
     10 + titleHeight + 4 + footerHeight,
     10 + titleHeight + 4 + retryHeight,
@@ -133,8 +143,15 @@ class BookGridViewport {
     );
   }
 
-  Object get layoutKey =>
-      (width, height, titleHeight, authorHeight, retryHeight);
+  Object get layoutKey => (
+    width,
+    height,
+    titleHeight,
+    authorHeight,
+    retryHeight,
+    showSeries,
+    showProgressBar,
+  );
 }
 
 @immutable

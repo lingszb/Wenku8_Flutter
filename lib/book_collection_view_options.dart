@@ -12,6 +12,7 @@ import 'book_shelf_preferences.dart';
 import 'book_shelf_content_preferences.dart';
 import 'glass_choices.dart';
 import 'setting_menu.dart';
+import 'local_library_preferences.dart';
 
 /// Region-specific view sheets never change the other region's presentation.
 enum BookCollectionViewTarget { all, shelf, collection }
@@ -36,6 +37,12 @@ class BookCollectionViewOptions extends StatelessWidget {
     this.gridViewport,
     this.target = BookCollectionViewTarget.all,
     this.onShowLayoutOptions,
+    this.showProgressBar = true,
+    this.showSeries = true,
+    this.progressDisplay = BookProgressDisplay.percentage,
+    this.onShowProgressBarChanged,
+    this.onShowSeriesChanged,
+    this.onProgressDisplayChanged,
   });
 
   final BookCollectionMode mode;
@@ -53,6 +60,10 @@ class BookCollectionViewOptions extends StatelessWidget {
   final bool reduceMotion;
   final BookCollectionViewTarget target;
   final VoidCallback? onShowLayoutOptions;
+  final bool showProgressBar, showSeries;
+  final BookProgressDisplay progressDisplay;
+  final ValueChanged<bool>? onShowProgressBarChanged, onShowSeriesChanged;
+  final ValueChanged<BookProgressDisplay>? onProgressDisplayChanged;
 
   static IconData iconFor(BookCollectionMode mode) => switch (mode) {
     BookCollectionMode.list => CupertinoIcons.list_bullet,
@@ -182,6 +193,41 @@ class BookCollectionViewOptions extends StatelessWidget {
             ),
           ),
         ),
+      if (target != BookCollectionViewTarget.shelf &&
+          onProgressDisplayChanged != null) ...[
+        const SizedBox(height: 16),
+        _ShelfToggle(
+          label: '显示阅读进度条',
+          value: showProgressBar,
+          onChanged: onShowProgressBarChanged!,
+        ),
+        const SizedBox(height: 8),
+        GlassChoiceGroup<BookProgressDisplay>(
+          name: 'collection-progress-display',
+          label: '进度文字',
+          value: progressDisplay,
+          options: const {
+            BookProgressDisplay.pages: '页码',
+            BookProgressDisplay.percentage: '百分比',
+          },
+          onChanged: onProgressDisplayChanged!,
+        ),
+        const SizedBox(height: 8),
+        AppText(
+          '百分比按章节计算；页码显示上次分页的章内页码。滚动阅读或旧记录需先分页。',
+          style: TextStyle(
+            fontSize: 12,
+            height: 1.6,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: 12),
+        _ShelfToggle(
+          label: '显示系列信息',
+          value: showSeries,
+          onChanged: onShowSeriesChanged!,
+        ),
+      ],
       if (target != BookCollectionViewTarget.shelf)
         AnimatedOptionSection(
           expanded: mode.isGrid,
