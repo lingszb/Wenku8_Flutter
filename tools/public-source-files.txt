@@ -1040,3 +1040,6 @@ test/local_reading_history_shortcut_test.dart
 test/reader_image_pagination_test.dart
 test/book_display_test.dart
 test/startup_reader_test.dart
+.agents/skills/icon-motion-design/SKILL.md
+assets/icons/randomRead.svg
+assets/icons/randomRead-active.svg
