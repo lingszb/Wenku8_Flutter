@@ -5209,7 +5209,18 @@ class _DetailPageState extends State<DetailPage> with TickerProviderStateMixin {
           await state.beginReadingJump(
             novel,
             origin,
-            targetProgress: chapter / novel.chapters.length,
+            targetProgress: target == null
+                ? chapter / novel.chapters.length
+                : await _bookTargetProgress(
+                    novel,
+                    target,
+                    (index) async => ReaderContent.parse(
+                      await repository.chapterContent(
+                        novel.id,
+                        novel.chapters[index],
+                      ),
+                    ),
+                  ),
           );
         } catch (_) {
           if (mounted && context.mounted) {
@@ -5239,6 +5250,41 @@ class _DetailPageState extends State<DetailPage> with TickerProviderStateMixin {
       if (mounted) setState(() {});
     }
   }
+}
+
+Future<double> _bookTargetProgress(
+  Novel novel,
+  BookReadingTarget target,
+  Future<ReaderContent> Function(int) load,
+) async {
+  final chapter = novel.chapters.indexWhere((c) => c.id == target.chapterId);
+  if (chapter < 0) throw const FormatException('目标章节已不在目录中');
+  if (target.paragraph == 0 && target.offset == 0) {
+    return chapter / novel.chapters.length;
+  }
+  final content = await load(chapter);
+  final coordinates = content.coordinateMap;
+  final resolved = coordinates?.accepts('') == true
+      ? coordinates!.resolve(
+          paragraphs: content.paragraphs,
+          paragraph: target.paragraph,
+          offset: target.offset,
+          paragraphFraction: 0,
+          fraction: 0,
+          revision: '',
+        )
+      : null;
+  final paragraph = (resolved?.paragraph ?? target.paragraph).clamp(
+    0,
+    content.paragraphs.length - 1,
+  );
+  final offset = resolved?.offset ?? target.offset;
+  final length = content.paragraphs[paragraph].length;
+  final fraction = ReaderSourceProgress.of(content).fraction((
+    row: paragraph,
+    fraction: length == 0 ? 0 : (offset / length).clamp(0.0, 1.0),
+  ));
+  return (chapter + fraction) / novel.chapters.length;
 }
 
 ReadingPosition _bookTargetPosition(Novel novel, BookReadingTarget target) {
@@ -6657,7 +6703,13 @@ class _ReaderPageState extends State<ReaderPage>
           await widget.state.beginReadingJump(
             _sourceBook,
             origin,
-            targetProgress: targetChapter < 0
+            targetProgress: action is BookReadingTarget
+                ? await _bookTargetProgress(
+                    _sourceBook,
+                    action,
+                    _prepareContent,
+                  )
+                : targetChapter < 0
                 ? null
                 : targetChapter / _sourceBook.chapters.length,
           );
@@ -8914,7 +8966,9 @@ class _ReaderPageState extends State<ReaderPage>
         await widget.state.beginReadingJump(
           _sourceBook,
           origin,
-          targetProgress: targetChapter < 0
+          targetProgress: chapter is BookReadingTarget
+              ? await _bookTargetProgress(_sourceBook, chapter, _prepareContent)
+              : targetChapter < 0
               ? null
               : targetChapter / _sourceBook.chapters.length,
         );

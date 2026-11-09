@@ -2660,13 +2660,30 @@ class LibraryState extends ChangeNotifier {
         if (index == null) return null;
         final chapterId = mapping[source.chapters[index].id];
         final next = indices[chapterId];
-        return next == null
+        if (next == null) return null;
+        final origin = value.returnPoint == null
             ? null
-            : ReadingPosition.fromJson({
-                ...value.toJson(),
-                'chapter': next,
-                'chapterId': chapterId,
-              });
+            : move(value.returnPoint!, mapping, source);
+        final record = {...value.toJson()}
+          ..remove('returnPoint')
+          ..remove('jumpDistance')
+          ..remove('jumpChapterDistance');
+        return ReadingPosition.fromJson({
+          ...record,
+          'chapter': next,
+          'chapterId': chapterId,
+          if (origin != null) ...{
+            'returnPoint': origin.toJson(),
+            // A whole-book percentage changes when volumes are added/removed.
+            if (value.jumpDistance != null)
+              'jumpDistance':
+                  (value.jumpDistance! *
+                          source.chapters.length /
+                          target.chapters.length)
+                      .clamp(0.0, 100.0),
+            'jumpChapterDistance': ?value.jumpChapterDistance,
+          },
+        });
       }
 
       final identity = {for (final c in target.chapters) c.id: c.id};
@@ -2741,7 +2758,10 @@ class LibraryState extends ChangeNotifier {
           if (mapped == null && splitUnderlines && ranges.isNotEmpty) {
             final first = ranges.first;
             mapped = ReadingPosition.fromJson({
-              ...mark.position.toJson(),
+              ...({...mark.position.toJson()}
+                ..remove('returnPoint')
+                ..remove('jumpDistance')
+                ..remove('jumpChapterDistance')),
               'chapter': indices[first.chapterId],
               'chapterId': first.chapterId,
               'paragraphIndex': first.startParagraph,

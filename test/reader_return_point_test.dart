@@ -82,6 +82,206 @@ void main() {
     textOffset: 7,
   );
 
+  Novel volume(int id, List<int> chapterIds) => Novel(
+    id: id,
+    title: '合订回归样本',
+    author: '',
+    genre: '',
+    summary: '',
+    colors: book.colors,
+    chapters: [
+      for (final id in chapterIds) NovelChapter('第$id章', '正文', id: id),
+    ],
+  );
+
+  test(
+    'combine and split remap nested return points despite reused chapter IDs',
+    () async {
+      final first = volume(2001, [1, 2]);
+      final second = volume(2002, [1, 2]);
+      final combined = volume(2003, [101, 102, 201, 202]);
+      await state.savePosition(
+        novel: second,
+        chapter: 0,
+        offset: .2,
+        maximum: 1,
+        width: 390,
+        paragraphIndex: 8,
+        textOffset: 13,
+      );
+      await state.beginReadingJump(
+        second,
+        state.positionFor(second.id)!,
+        targetProgress: .8,
+      );
+      await state.savePosition(
+        novel: second,
+        chapter: 1,
+        offset: .6,
+        maximum: 1,
+        width: 390,
+      );
+      await state.combineBookRecords(
+        target: combined,
+        sources: {
+          first: {1: 101, 2: 102},
+          second: {1: 201, 2: 202},
+        },
+      );
+      final saved = state.positionFor(combined.id)!;
+      expect(saved.chapterId, 202);
+      expect(saved.returnPoint!.chapterId, 201);
+      expect(saved.returnPoint!.chapter, 2);
+      expect(saved.returnPoint!.paragraphIndex, 8);
+      expect(saved.returnPoint!.textOffset, 13);
+      expect(saved.jumpDistance, closeTo(35, .0001));
+      final reloaded = LibraryState(prefs);
+      addTearDown(reloaded.dispose);
+      expect(reloaded.positionFor(combined.id)!.returnPoint!.chapterId, 201);
+      final split = volume(2004, [1, 2]);
+      await state.combineBookRecords(
+        target: split,
+        sources: {
+          combined: {201: 1, 202: 2},
+        },
+      );
+      expect(state.positionFor(split.id)!.chapterId, 2);
+      expect(state.positionFor(split.id)!.returnPoint!.chapterId, 1);
+      expect(state.positionFor(split.id)!.returnPoint!.chapter, 0);
+      await state.resolveReadingJump(split, restore: true);
+      expect(state.positionFor(split.id)!.chapterId, 1);
+      expect(state.positionFor(split.id)!.paragraphIndex, 8);
+      expect(state.positionFor(combined.id)!.returnPoint, isNotNull);
+    },
+  );
+
+  test(
+    'split drops an out-of-volume return point without deleting source records',
+    () async {
+      final combined = volume(2010, [101, 102, 201, 202]);
+      final split = volume(2011, [1, 2]);
+      await state.savePosition(
+        novel: combined,
+        chapter: 0,
+        offset: .2,
+        maximum: 1,
+        width: 390,
+      );
+      await state.beginReadingJump(
+        combined,
+        state.positionFor(combined.id)!,
+        targetProgress: .9,
+      );
+      await state.savePosition(
+        novel: combined,
+        chapter: 3,
+        offset: .6,
+        maximum: 1,
+        width: 390,
+      );
+      await state.combineBookRecords(
+        target: split,
+        sources: {
+          combined: {201: 1, 202: 2},
+        },
+      );
+      final saved = state.positionFor(split.id)!;
+      expect(saved.chapterId, 2);
+      expect(saved.returnPoint, isNull);
+      expect(saved.jumpDistance, isNull);
+      expect(saved.jumpChapterDistance, isNull);
+      expect(state.positionFor(combined.id)!.returnPoint!.chapterId, 101);
+    },
+  );
+
+  for (final fromDetail in [false, true]) {
+    testWidgets(
+      'inner EPUB directory target records source span from ${fromDetail ? 'detail' : 'reader'}',
+      (tester) async {
+        state.dispose();
+        state = LibraryState(prefs);
+        await state.setReaderChromeVisible(true);
+        final novel = Novel(
+          id: book.id,
+          title: '章内目录',
+          author: '',
+          genre: '',
+          summary: '',
+          colors: book.colors,
+          chapters: [
+            NovelChapter(
+              '正文资源',
+              List.generate(90, (i) => '第$i段正文，测试内链字符位置。' * 3).join('\n\n'),
+              id: 11,
+            ),
+          ],
+          navigation: const BookNavigation([
+            BookNavigationEntry('开篇', BookReadingTarget(11)),
+            BookNavigationEntry(
+              '章末内链',
+              BookReadingTarget(11, paragraph: 80, offset: 12),
+            ),
+          ]),
+        );
+        await state.savePosition(
+          novel: novel,
+          chapter: 0,
+          offset: 0,
+          maximum: 1,
+          width: 390,
+          paragraphIndex: 0,
+          textOffset: 0,
+        );
+        tester.view.physicalSize = const Size(390, 850);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        await tester.pumpWidget(
+          MaterialApp(
+            home: fromDetail
+                ? DetailPage(
+                    novel: novel,
+                    state: state,
+                    repository: const DemoNovelRepository(),
+                  )
+                : ReaderPage(
+                    novel: novel,
+                    state: state,
+                    repository: const DemoNovelRepository(),
+                    initialChapter: 0,
+                  ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        if (!fromDetail) {
+          await tester.tap(
+            find.byKey(const ValueKey('reader-catalogue-entry')),
+          );
+          await tester.pumpAndSettle();
+        }
+        final target = find.byKey(
+          ValueKey(fromDetail ? 'detail-chapter-1' : 'reader-chapter-1'),
+        );
+        await tester.ensureVisible(target);
+        await tester.tap(target);
+        await tester.pumpAndSettle();
+        await tester.pump(const Duration(milliseconds: 200));
+        final saved = state.positionFor(novel.id)!;
+        expect(saved.returnPoint, isNotNull);
+        expect(saved.jumpDistance, greaterThan(80));
+        expect(saved.jumpChapterDistance, greaterThan(80));
+        expect(state.shouldRemindReadingJump(novel), isTrue);
+        await state.setReadingJumpReminderScope(
+          ReadingJumpReminderScope.chapter,
+        );
+        expect(state.shouldRemindReadingJump(novel), isTrue);
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pumpAndSettle();
+      },
+    );
+  }
+
   test(
     'chapter thresholds catch long-chapter jumps and persist separately',
     () async {
