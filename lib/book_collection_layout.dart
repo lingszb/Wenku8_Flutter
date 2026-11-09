@@ -111,6 +111,8 @@ class _BookCollectionSliverState extends State<BookCollectionSliver> {
                       widget.gridBottomInset)
                   .clamp(0.0, double.infinity),
           textScaler: MediaQuery.textScalerOf(context),
+          textStyle: DefaultTextStyle.of(context).style,
+          textDirection: Directionality.of(context),
           showSeries: widget.gridShowSeries,
           showProgressBar: widget.gridShowProgressBar,
         );

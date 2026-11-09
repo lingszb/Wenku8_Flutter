@@ -180,3 +180,5 @@ key.properties
 
 !/test/book_display_test.dart
 !/test/startup_reader_test.dart
+!/test/book_categories_test.dart
+!/test/reader_return_point_test.dart

@@ -1886,6 +1886,10 @@ class LocalBookStore extends ChangeNotifier
   final Map<int, String?> _seriesCovers = {};
   final Map<int, String> _coverOverrides = {};
   final Map<int, ({Novel source, String url, Novel result})> _coveredBooks = {};
+
+  /// The confirmed chapter ID is supplied by the reading-state owner.
+  /// This is a projection only; no cover override or original file is rewritten.
+  int? Function(int bookId)? readingCoverChapterId;
   String? coverError;
   String? seriesError;
   Future<void> _writes = Future.value();
@@ -1899,7 +1903,22 @@ class LocalBookStore extends ChangeNotifier
   }
 
   List<Novel> get books {
-    if (_visibleBooks case final snapshot?) return snapshot;
+    if (_visibleBooks case final snapshot?) {
+      List<Novel>? updated;
+      if (readingCoverChapterId != null) {
+        for (final (index, item) in snapshot.indexed) {
+          if (!_seriesBooks.containsKey(item.id)) continue;
+          final current = book(item.id)!;
+          if (!identical(item, current)) {
+            updated ??= [...snapshot];
+            updated[index] = current;
+          }
+        }
+      }
+      return updated == null
+          ? snapshot
+          : (_visibleBooks = List.unmodifiable(updated));
+    }
     final members = <int>{
       for (final id in _seriesBooks.keys)
         ..._series[id]!.volumes.map((v) => v.bookId),
@@ -1982,8 +2001,18 @@ class LocalBookStore extends ChangeNotifier
 
   Novel _withCover(Novel source) {
     final name = _coverOverrides[source.id];
-    if (name == null) return source;
-    final url = 'wenku-local://${source.id}/$name';
+    String? url;
+    if (_seriesBooks.containsKey(source.id)) {
+      final chapterId = readingCoverChapterId?.call(source.id);
+      final originalId = chapterId == null
+          ? null
+          : _seriesChapters[source.id]?[chapterId]?.bookId;
+      if (originalId != null) url = book(originalId)?.coverUrl;
+    }
+    // A saved fallback must not pin an actively read omnibus to one volume.
+    // Keep the override untouched for missing/unread volume covers.
+    url ??= name == null ? null : 'wenku-local://${source.id}/$name';
+    if (url == null || url == source.coverUrl) return source;
     final cached = _coveredBooks[source.id];
     if (identical(cached?.source, source) && cached?.url == url) {
       return cached!.result;

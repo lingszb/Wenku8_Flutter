@@ -417,7 +417,6 @@ lib/book_import_limits.dart
 lib/book_navigation.dart
 lib/book_open_monitor.dart
 lib/book_search.dart
-lib/book_share_action.dart
 lib/book_shelf_content_preferences.dart
 lib/book_shelf_content_projection.dart
 lib/book_shelf_preferences.dart
@@ -1041,5 +1040,7 @@ test/reader_image_pagination_test.dart
 test/book_display_test.dart
 test/startup_reader_test.dart
 .agents/skills/icon-motion-design/SKILL.md
+test/book_categories_test.dart
+test/reader_return_point_test.dart
 assets/icons/randomRead.svg
 assets/icons/randomRead-active.svg

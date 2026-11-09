@@ -27,7 +27,7 @@ class _ReadingHistoryPageState extends State<ReadingHistoryPage> {
 
   Novel? _known(int id) {
     if (widget.repository case final OfflineNovelRepository offline) {
-      final book = offline.cache.book(id)?.novel;
+      final book = offline.local?.book(id) ?? offline.cache.book(id)?.novel;
       if (book != null) return book;
     }
     return widget.state.cachedNovel(id);

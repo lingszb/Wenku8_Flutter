@@ -62,6 +62,9 @@ final backupPreferenceKeys = <String>{
   'localReaderMode',
   'directReading',
   'openRecentOnLaunch',
+  'readingJumpReminderPercent',
+  'readingJumpChapterReminderPercent',
+  'readingJumpReminderScope',
   'startPage',
   'directReadingPages',
   'combinedShelf',
@@ -291,6 +294,11 @@ Map<String, Object> _validateRecords(Map<String, dynamic> input) {
         ),
         'readerLineHeight' => _number(value, 1.3, 2.2),
         'readerPreferences' => _validReaderPreferences(value),
+        'readingJumpReminderScope' => ['book', 'chapter'].contains(value),
+        'readingJumpReminderPercent' || 'readingJumpChapterReminderPercent' =>
+          _number(value, 1, 100) &&
+              value is num &&
+              value == value.roundToDouble(),
         'glassBlur' => _number(value, 0, 24),
         'glassOpacity' => _number(value, 0, 1),
         _ =>
@@ -499,6 +507,21 @@ void _validatePosition(Object? record) {
           (record['textOffset'] is! int ||
               !_number(record['textOffset'], 0, 100000000)))) {
     throw const FormatException('阅读位置格式有误');
+  }
+  if (record['jumpChapterDistance'] != null &&
+      !_number(record['jumpChapterDistance'], 0, 100)) {
+    throw const FormatException('章内跳转跨度格式有误');
+  }
+  if (record['jumpDistance'] != null &&
+      !_number(record['jumpDistance'], 0, 100)) {
+    throw const FormatException('跳转跨度格式有误');
+  }
+  if (record['returnPoint'] != null) {
+    final origin = record['returnPoint'];
+    if (origin is! Map || origin.containsKey('returnPoint')) {
+      throw const FormatException('跳转前阅读点格式有误');
+    }
+    _validatePosition(origin);
   }
 }
 

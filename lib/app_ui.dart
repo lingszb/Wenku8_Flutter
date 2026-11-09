@@ -1537,6 +1537,7 @@ class NovelCover extends StatelessWidget {
     this.heroTag,
     this.isDetailCover = false,
     this.fadeIn = false,
+    this.fit = BoxFit.cover,
   });
   final Novel novel;
   final double width;
@@ -1544,6 +1545,7 @@ class NovelCover extends StatelessWidget {
   final Object? heroTag;
   final bool isDetailCover;
   final bool fadeIn;
+  final BoxFit fit;
 
   @override
   Widget build(BuildContext context) {
@@ -1719,7 +1721,7 @@ class NovelCover extends StatelessWidget {
                       width,
                       MediaQuery.devicePixelRatioOf(context),
                     ),
-                    fit: BoxFit.cover,
+                    fit: fit,
                     gaplessPlayback: true,
                     errorBuilder: (context, error, stack) => fallback,
                     frameBuilder: (context, child, frame, synchronous) =>

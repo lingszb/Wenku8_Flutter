@@ -60,18 +60,56 @@ class BookGridDensity {
 /// Text is budgeted at its actual scaled size; it is never shrunk to fit a grid.
 @immutable
 class BookGridViewport {
+  static double _lineHeight(
+    TextScaler scaler,
+    double size,
+    TextStyle? base,
+    TextDirection direction, {
+    FontWeight? weight,
+  }) {
+    final painter = TextPainter(
+      text: TextSpan(
+        text: '书名 作者 あ Aa 96.3%',
+        style: (base ?? const TextStyle()).copyWith(
+          fontSize: size,
+          height: 1.4,
+          fontWeight: weight,
+        ),
+      ),
+      textScaler: scaler,
+      textDirection: direction,
+    )..layout();
+    final height = painter.height.ceilToDouble();
+    painter.dispose();
+    return height;
+  }
+
   BookGridViewport({
     required this.width,
     required this.height,
     required TextScaler textScaler,
+    TextStyle? textStyle,
+    TextDirection textDirection = TextDirection.ltr,
     this.showSeries = false,
     this.showProgressBar = false,
-  }) : titleHeight = (textScaler.scale(14) * 1.4).ceilToDouble() * 2,
-       authorHeight = (textScaler.scale(12) * 1.4).ceilToDouble(),
-       progressHeight = (textScaler.scale(12) * 1.4).ceilToDouble(),
+  }) : titleHeight =
+           _lineHeight(
+             textScaler,
+             14,
+             textStyle,
+             textDirection,
+             weight: FontWeight.w600,
+           ) *
+           2,
+       authorHeight = _lineHeight(textScaler, 12, textStyle, textDirection),
+       progressHeight = _lineHeight(textScaler, 12, textStyle, textDirection),
        minimumCellWidth = math.max(56.0, textScaler.scale(14) * 4),
-       retryHeight = math.max(48.0, textScaler.scale(12) * 1.4 + 16),
-       statusHeight = textScaler.scale(12) * 1.4 * 2 + 8;
+       retryHeight = math.max(
+         48.0,
+         _lineHeight(textScaler, 12, textStyle, textDirection) + 16,
+       ),
+       statusHeight =
+           _lineHeight(textScaler, 12, textStyle, textDirection) * 2 + 8;
 
   static const gap = 16.0, coverAspectRatio = 30 / 41;
   // Cover artwork and the metadata action lane have separate hit areas.

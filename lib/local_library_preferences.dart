@@ -1,7 +1,9 @@
 import 'dart:convert';
 import 'dart:math';
+
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
 import 'catalog.dart';
 import 'book_search.dart';
 import 'book_text_encoding.dart';
@@ -123,11 +125,24 @@ class LocalLibraryPreferences extends ChangeNotifier {
   Future<void> _writes = Future.value();
   bool _disposed = false;
 
-  Map<String, String> get groups => {
-    for (final entry in _groups.entries)
-      if (entry.value['deleted'] != true)
-        entry.key: entry.value['name'] as String,
-  };
+  Map<String, String> get groups {
+    final entries = _groups.entries
+        .where((entry) => entry.value['deleted'] != true)
+        .toList();
+    final original = {
+      for (final (index, entry) in entries.indexed) entry.key: index,
+    };
+    entries.sort((a, b) {
+      final order = ((a.value['order'] as int?) ?? original[a.key]!).compareTo(
+        (b.value['order'] as int?) ?? original[b.key]!,
+      );
+      return order != 0 ? order : a.key.compareTo(b.key);
+    });
+    return {
+      for (final entry in entries) entry.key: entry.value['name'] as String,
+    };
+  }
+
   bool _hasGroup(String id) {
     final group = _groups[id];
     return group != null && group['deleted'] != true;
@@ -328,13 +343,16 @@ class LocalLibraryPreferences extends ChangeNotifier {
           v['name'].length > 30 ||
           v['at'] is! int ||
           v['at'] < 0 ||
-          (v['deleted'] != null && v['deleted'] is! bool)) {
+          (v['deleted'] != null && v['deleted'] is! bool) ||
+          (v.containsKey('order') &&
+              (v['order'] is! int || v['order'] < 0 || v['order'] > 1000))) {
         throw const FormatException('同步分类数据格式有误');
       }
       result['groups'][e.key] = {
         'name': v['name'].trim(),
         'at': v['at'],
         'deleted': v['deleted'] == true,
+        if (v.containsKey('order')) 'order': v['order'],
       };
     }
     for (final e in (input['assignments'] as Map).entries) {
@@ -593,7 +611,18 @@ class LocalLibraryPreferences extends ChangeNotifier {
           id =
               'g${_clock.toRadixString(36)}-${random.nextInt(0x100000000).toRadixString(36)}${random.nextInt(0x100000000).toRadixString(36)}';
       final next = validateOrganization(exportOrganization());
-      next['groups'][id] = {'name': name, 'at': at, 'deleted': false};
+      final lastOrder = _groups.values
+          .where((group) => group['deleted'] != true)
+          .fold<int>(
+            groups.length - 1,
+            (order, group) => max(order, group['order'] as int? ?? -1),
+          );
+      next['groups'][id] = {
+        'name': name,
+        'at': at,
+        'deleted': false,
+        'order': lastOrder + 1,
+      };
       await _replaceOrganization(next);
       return id;
     });
@@ -609,7 +638,33 @@ class LocalLibraryPreferences extends ChangeNotifier {
         throw const FormatException('已有同名分类');
       }
       final next = validateOrganization(exportOrganization());
-      next['groups'][id] = {'name': name, 'at': _stamp(), 'deleted': false};
+      next['groups'][id] = {
+        ..._groups[id]!,
+        'name': name,
+        'at': _stamp(),
+        'deleted': false,
+      };
+      await _replaceOrganization(next);
+    });
+  }
+
+  /// Reorder only live custom groups; built-in and dynamic views stay fixed.
+  /// Use the existing atomic organization write so failures preserve the order.
+  Future<void> reorderGroups(List<String> ids) {
+    final requested = List<String>.of(ids);
+    return _organize(() async {
+      final current = groups.keys.toList();
+      if (requested.length != current.length ||
+          requested.toSet().length != requested.length ||
+          !requested.toSet().containsAll(current)) {
+        throw const FormatException('分类已变化，请重新排序');
+      }
+      if (listEquals(requested, current)) return;
+      final next = validateOrganization(exportOrganization());
+      final at = _stamp();
+      for (final (index, id) in requested.indexed) {
+        next['groups'][id] = {...next['groups'][id], 'order': index, 'at': at};
+      }
       await _replaceOrganization(next);
     });
   }

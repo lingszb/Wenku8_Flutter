@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
@@ -36,6 +37,8 @@ import 'reading_activity.dart';
 import 'reading_moments.dart';
 export 'reading_entry.dart';
 
+enum ReadingJumpReminderScope { book, chapter }
+
 class ReadingPosition {
   const ReadingPosition({
     required this.chapter,
@@ -55,6 +58,9 @@ class ReadingPosition {
     this.contentRevision = '',
     this.chapterPage,
     this.chapterPages,
+    this.returnPoint,
+    this.jumpDistance,
+    this.jumpChapterDistance,
   });
   final int chapter;
   final int chapterId;
@@ -77,7 +83,15 @@ class ReadingPosition {
   /// Last measured chapter pagination, for display only. Never a resume anchor.
   final int? chapterPage, chapterPages;
 
+  /// The source anchor retained before a deliberate catalogue detour.
+  final ReadingPosition? returnPoint;
+  final double? jumpDistance, jumpChapterDistance;
+
   Map<String, Object> toJson() => {
+    if (returnPoint != null)
+      'returnPoint': {...returnPoint!.toJson()}..remove('returnPoint'),
+    'jumpDistance': ?jumpDistance,
+    'jumpChapterDistance': ?jumpChapterDistance,
     'chapterPage': ?chapterPage,
     'chapterPages': ?chapterPages,
     'chapter': chapter,
@@ -103,7 +117,29 @@ class ReadingPosition {
       return number is num && number.isFinite ? number.toDouble() : fallback;
     }
 
+    final saved = value['returnPoint'];
+    final returnPoint =
+        saved is Map && saved['chapter'] is int && saved['chapterId'] is int
+        ? ReadingPosition.fromJson(
+            Map<String, dynamic>.from(saved)..remove('returnPoint'),
+          )
+        : null;
     return ReadingPosition(
+      returnPoint: returnPoint,
+      jumpChapterDistance:
+          value['jumpChapterDistance'] is num &&
+              (value['jumpChapterDistance'] as num).isFinite &&
+              value['jumpChapterDistance'] >= 0 &&
+              value['jumpChapterDistance'] <= 100
+          ? (value['jumpChapterDistance'] as num).toDouble()
+          : null,
+      jumpDistance:
+          value['jumpDistance'] is num &&
+              (value['jumpDistance'] as num).isFinite &&
+              value['jumpDistance'] >= 0 &&
+              value['jumpDistance'] <= 100
+          ? (value['jumpDistance'] as num).toDouble()
+          : null,
       chapterPage:
           value['chapterPage'] is int &&
               value['chapterPages'] is int &&
@@ -705,6 +741,7 @@ class LibraryState extends ChangeNotifier {
   final Map<int, Novel> _persistedNovels = {};
   final Map<int, int> _chapters = {};
   final Map<int, ReadingPosition> _positions = {};
+  final Map<int, Completer<void>> _readingJumpWrites = {};
   final Map<int, int> _activeReaders = {};
   Map<int, ReadingPosition> get readingPositions =>
       Map.unmodifiable(_positions);
@@ -1157,6 +1194,11 @@ class LibraryState extends ChangeNotifier {
 
   int? chapterForPosition(Novel novel, ReadingPosition position) {
     if (position.chapterId > 0) {
+      if (position.chapter >= 0 &&
+          position.chapter < novel.chapters.length &&
+          novel.chapters[position.chapter].id == position.chapterId) {
+        return position.chapter;
+      }
       final index = novel.chapters.indexWhere(
         (chapter) => chapter.id == position.chapterId,
       );
@@ -2618,13 +2660,30 @@ class LibraryState extends ChangeNotifier {
         if (index == null) return null;
         final chapterId = mapping[source.chapters[index].id];
         final next = indices[chapterId];
-        return next == null
+        if (next == null) return null;
+        final origin = value.returnPoint == null
             ? null
-            : ReadingPosition.fromJson({
-                ...value.toJson(),
-                'chapter': next,
-                'chapterId': chapterId,
-              });
+            : move(value.returnPoint!, mapping, source);
+        final record = {...value.toJson()}
+          ..remove('returnPoint')
+          ..remove('jumpDistance')
+          ..remove('jumpChapterDistance');
+        return ReadingPosition.fromJson({
+          ...record,
+          'chapter': next,
+          'chapterId': chapterId,
+          if (origin != null) ...{
+            'returnPoint': origin.toJson(),
+            // A whole-book percentage changes when volumes are added/removed.
+            if (value.jumpDistance != null)
+              'jumpDistance':
+                  (value.jumpDistance! *
+                          source.chapters.length /
+                          target.chapters.length)
+                      .clamp(0.0, 100.0),
+            'jumpChapterDistance': ?value.jumpChapterDistance,
+          },
+        });
       }
 
       final identity = {for (final c in target.chapters) c.id: c.id};
@@ -2699,7 +2758,10 @@ class LibraryState extends ChangeNotifier {
           if (mapped == null && splitUnderlines && ranges.isNotEmpty) {
             final first = ranges.first;
             mapped = ReadingPosition.fromJson({
-              ...mark.position.toJson(),
+              ...({...mark.position.toJson()}
+                ..remove('returnPoint')
+                ..remove('jumpDistance')
+                ..remove('jumpChapterDistance')),
               'chapter': indices[first.chapterId],
               'chapterId': first.chapterId,
               'paragraphIndex': first.startParagraph,
@@ -2990,6 +3052,217 @@ class LibraryState extends ChangeNotifier {
     });
   }
 
+  Future<void> _withReadingJumpWrite(
+    int id,
+    Future<void> Function() action,
+  ) async {
+    while (_readingJumpWrites.containsKey(id)) {
+      await _readingJumpWrites[id]!.future;
+    }
+    final barrier = Completer<void>();
+    _readingJumpWrites[id] = barrier;
+    try {
+      await _queuePositionWrite(action);
+    } finally {
+      _readingJumpWrites.remove(id);
+      barrier.complete();
+    }
+  }
+
+  ReadingJumpReminderScope get readingJumpReminderScope =>
+      _prefs.get('readingJumpReminderScope') == 'chapter'
+      ? ReadingJumpReminderScope.chapter
+      : ReadingJumpReminderScope.book;
+
+  int _reminderPercent(String key, int fallback) {
+    final value = _prefs.get(key);
+    return value is num &&
+            value.isFinite &&
+            value >= 1 &&
+            value <= 100 &&
+            value == value.roundToDouble()
+        ? value.toInt()
+        : fallback;
+  }
+
+  int get readingJumpBookReminderPercent =>
+      _reminderPercent('readingJumpReminderPercent', 5);
+  int get readingJumpChapterReminderPercent =>
+      _reminderPercent('readingJumpChapterReminderPercent', 10);
+  int get readingJumpReminderPercent =>
+      readingJumpReminderScope == ReadingJumpReminderScope.chapter
+      ? readingJumpChapterReminderPercent
+      : readingJumpBookReminderPercent;
+
+  Future<void> setReadingJumpReminderScope(
+    ReadingJumpReminderScope value,
+  ) async {
+    if (_restoreBarrier case final barrier?) await barrier.future;
+    await _queuePositionWrite(() async {
+      await writeLibraryPreference(
+        _prefs,
+        'readingJumpReminderScope',
+        value.name,
+      );
+      _historyChanged();
+      if (!_disposed) {
+        _readerBehaviorChanges.notifyListeners();
+        _settings.notifyListeners();
+      }
+    });
+  }
+
+  Future<void> setReadingJumpReminderPercent(int value) async {
+    if (value < 1 || value > 100) {
+      throw const FormatException('提醒线需要在 1%～100% 之间');
+    }
+    final key = readingJumpReminderScope == ReadingJumpReminderScope.chapter
+        ? 'readingJumpChapterReminderPercent'
+        : 'readingJumpReminderPercent';
+    if (_restoreBarrier case final barrier?) await barrier.future;
+    await _queuePositionWrite(() async {
+      await writeLibraryPreference(_prefs, key, value);
+      _historyChanged();
+      if (!_disposed) {
+        _readerBehaviorChanges.notifyListeners();
+        _settings.notifyListeners();
+      }
+    });
+  }
+
+  double? readingFractionForPosition(Novel novel, ReadingPosition point) {
+    final chapter = chapterForPosition(novel, point);
+    return chapter == null || novel.chapters.isEmpty
+        ? null
+        : (chapter + point.fraction) / novel.chapters.length;
+  }
+
+  bool shouldRemindReadingJump(Novel novel, {ReadingPosition? position}) {
+    final saved = _positions[novel.id];
+    final origin = saved?.returnPoint;
+    if (origin == null) return false;
+    final before = readingFractionForPosition(novel, origin);
+    final after = readingFractionForPosition(novel, position ?? saved!);
+    if (before == null || after == null) return true;
+    final chapterMode =
+        readingJumpReminderScope == ReadingJumpReminderScope.chapter;
+    final originalChapter = chapterForPosition(novel, origin);
+    final current = position ?? saved!;
+    final currentChapter = chapterForPosition(novel, current);
+    final distance = chapterMode
+        ? (originalChapter != currentChapter
+              ? 100.0
+              : (current.fraction - origin.fraction).abs() * 100)
+        : (after - before).abs() * 100;
+    final manualDistance = chapterMode
+        ? saved?.jumpChapterDistance
+        : saved?.jumpDistance;
+    final threshold = readingJumpReminderPercent;
+    return distance + 1e-9 >= threshold &&
+        (manualDistance ?? distance) + 1e-9 >= threshold;
+  }
+
+  Future<void> beginReadingJump(
+    Novel novel,
+    ReadingPosition origin, {
+    double? targetProgress,
+  }) async {
+    if (targetProgress != null &&
+        (!targetProgress.isFinite ||
+            targetProgress < 0 ||
+            targetProgress > 1)) {
+      throw const FormatException('目标进度格式有误');
+    }
+    if (_restoreBarrier case final barrier?) await barrier.future;
+    await _withReadingJumpWrite(novel.id, () async {
+      final current = _positions[novel.id];
+      if (current?.returnPoint != null && targetProgress == null) return;
+      final point = current?.returnPoint ?? origin;
+      final chapter = chapterForPosition(novel, origin);
+      final before = readingFractionForPosition(novel, point);
+      if (chapter == null || before == null) {
+        throw const FormatException('原阅读点已无法定位');
+      }
+      final distance = targetProgress == null
+          ? current?.jumpDistance
+          : math.max(
+              current?.jumpDistance ?? 0.0,
+              (targetProgress - before).abs() * 100,
+            );
+      double? chapterDistance = current?.jumpChapterDistance;
+      if (targetProgress != null) {
+        final target = (targetProgress * novel.chapters.length).clamp(
+          0.0,
+          novel.chapters.length.toDouble(),
+        );
+        final targetChapter = (target + 1e-9).floor().clamp(
+          0,
+          novel.chapters.length - 1,
+        );
+        final originalChapter = chapterForPosition(novel, point)!;
+        final targetFraction = (target - targetChapter).clamp(0.0, 1.0);
+        final span = targetChapter != originalChapter
+            ? 100.0
+            : (targetFraction - point.fraction).abs() * 100;
+        chapterDistance = math.max(chapterDistance ?? 0, span);
+      }
+      final next = ReadingPosition.fromJson({
+        ...(current?.returnPoint == null ? origin : current!).toJson(),
+        if (current?.returnPoint == null) ...{
+          'chapter': chapter,
+          'chapterId': novel.chapters[chapter].id,
+        },
+        'returnPoint': {...point.toJson()}
+          ..remove('returnPoint')
+          ..remove('jumpDistance')
+          ..remove('jumpChapterDistance'),
+        'jumpDistance': ?distance,
+        'jumpChapterDistance': ?chapterDistance,
+      });
+      await _commitLibraryRecords({
+        'chapter_${novel.id}': next.chapter,
+        'reading_position_${novel.id}': jsonEncode(next.toJson()),
+      });
+      _positions[novel.id] = next;
+      _chapters[novel.id] = next.chapter;
+      _historyChanged();
+    });
+  }
+
+  /// Commit either the original anchor or the new location atomically.
+  Future<ReadingPosition?> resolveReadingJump(
+    Novel novel, {
+    required bool restore,
+  }) async {
+    if (_restoreBarrier case final barrier?) await barrier.future;
+    ReadingPosition? result;
+    await _withReadingJumpWrite(novel.id, () async {
+      final current = _positions[novel.id];
+      if (current?.returnPoint == null) return;
+      final chosen = restore ? current!.returnPoint! : current!;
+      final chapter = chapterForPosition(novel, chosen);
+      if (chapter == null) throw const FormatException('原阅读点已无法定位，请保留当前进度');
+      final next = ReadingPosition.fromJson({
+        ...chosen.toJson()
+          ..remove('returnPoint')
+          ..remove('jumpDistance')
+          ..remove('jumpChapterDistance'),
+        'chapter': chapter,
+        'chapterId': novel.chapters[chapter].id,
+        'updatedAt': DateTime.now().millisecondsSinceEpoch,
+      });
+      await _commitLibraryRecords({
+        'chapter_${novel.id}': chapter,
+        'reading_position_${novel.id}': jsonEncode(next.toJson()),
+      });
+      _positions[novel.id] = next;
+      _chapters[novel.id] = chapter;
+      result = next;
+      _historyChanged();
+    });
+    return result;
+  }
+
   Future<void> savePosition({
     required Novel novel,
     required int chapter,
@@ -3006,7 +3279,7 @@ class LibraryState extends ChangeNotifier {
     int? chapterPage,
     int? chapterPages,
   }) {
-    if (_restoreBarrier case final barrier?) {
+    if (_restoreBarrier ?? _readingJumpWrites[novel.id] case final barrier?) {
       return barrier.future.then(
         (_) => savePosition(
           novel: novel,
@@ -3042,6 +3315,9 @@ class LibraryState extends ChangeNotifier {
         chapterPage >= 1 &&
         chapterPage <= chapterPages;
     final position = ReadingPosition(
+      returnPoint: _positions[novel.id]?.returnPoint,
+      jumpDistance: _positions[novel.id]?.jumpDistance,
+      jumpChapterDistance: _positions[novel.id]?.jumpChapterDistance,
       chapterPage: validPages ? chapterPage : null,
       chapterPages: validPages ? chapterPages : null,
       chapter: chapter,
@@ -3405,6 +3681,9 @@ class LibraryState extends ChangeNotifier {
     'localReaderMode': _localReaderMode,
     'directReading': directReading,
     'openRecentOnLaunch': _openRecentOnLaunch,
+    'readingJumpReminderPercent': readingJumpBookReminderPercent,
+    'readingJumpChapterReminderPercent': readingJumpChapterReminderPercent,
+    'readingJumpReminderScope': readingJumpReminderScope.name,
     'startPage': _startPage.name,
     'directReadingPages': [
       for (final page in ReadingEntry.values)
