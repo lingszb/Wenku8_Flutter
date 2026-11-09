@@ -1,10 +1,12 @@
 import 'dart:async';
 import 'dart:math' as math;
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
+
 import 'app_ui.dart';
 import 'app_palette.dart';
 import 'archive_scroll_simulation.dart';
@@ -472,9 +474,13 @@ class _ArchiveFileCarouselState extends State<ArchiveFileCarousel>
     builder: (context) {
       final progress = widget.library?.readingFractionForNovel(book);
       final colors = Theme.of(context).colorScheme;
+      final percentage = progress == null
+          ? null
+          : '${(progress * 100).round()}%';
       return Row(
         children: [
-          Expanded(
+          Flexible(
+            fit: FlexFit.loose,
             child: AppText(
               '${book.author} · ${book.isComplete ? '已完结' : '连载中'}',
               maxLines: 1,
@@ -487,9 +493,9 @@ class _ArchiveFileCarouselState extends State<ArchiveFileCarousel>
             ),
           ),
           if (progress != null) ...[
-            const SizedBox(width: 12),
+            const SizedBox(width: 8),
             SizedBox(
-              width: 64,
+              width: 52,
               child: LinearProgressIndicator(
                 key: ValueKey('shelf-author-progress-${book.id}'),
                 value: progress,
@@ -498,7 +504,17 @@ class _ArchiveFileCarouselState extends State<ArchiveFileCarousel>
                 color: colors.primary,
                 backgroundColor: colors.onSurface.withValues(alpha: .08),
                 semanticsLabel: '阅读进度（按章节计算）',
-                semanticsValue: '${(progress * 100).toStringAsFixed(1)}%',
+                semanticsValue: percentage,
+              ),
+            ),
+            const SizedBox(width: 6),
+            AppText(
+              percentage!,
+              key: ValueKey('shelf-author-percentage-${book.id}'),
+              style: TextStyle(
+                fontSize: fontSize,
+                height: 1.5,
+                color: colors.onSurfaceVariant,
               ),
             ),
           ],

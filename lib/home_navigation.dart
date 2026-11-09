@@ -11,7 +11,7 @@ class HomeNavigation extends ChangeNotifier {
   bool get localReader => true;
   bool get combinedShelf => false;
   bool get readableShelfOnly => true;
-  List<int> get tabs => const [2, 3];
+  List<int> get tabs => const [1, 2, 3];
 
   int destination(int current) => tabs.contains(current) ? current : 2;
 }

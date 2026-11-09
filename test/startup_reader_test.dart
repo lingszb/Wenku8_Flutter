@@ -1,8 +1,13 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
+import 'package:wenku8_flutter/main.dart' show NovelApp;
+import 'package:wenku8_flutter/home_navigation.dart';
+import 'package:wenku8_flutter/glass_dock.dart';
+import 'package:wenku8_flutter/app_ui.dart';
+import 'package:wenku8_flutter/updates/app_updates.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:wenku8_flutter/catalog.dart';
@@ -30,6 +35,14 @@ class _DelayedRepository extends DemoNovelRepository {
     contentRequests++;
     return text.future;
   }
+}
+
+class _WaitingUpdates extends AppUpdates {
+  _WaitingUpdates(SharedPreferences preferences)
+    : super(preferences: preferences, packageUpdates: false);
+  final ready = Completer<void>();
+  @override
+  Future<void> loadInstalled({bool refresh = false}) => ready.future;
 }
 
 void main() {
@@ -85,6 +98,124 @@ void main() {
     await tester.pump(const Duration(milliseconds: 16));
     expect(repository.directoryRequests, 1);
   }
+
+  testWidgets(
+    'launch first frame is the cover, reader handoff never mounts home',
+    (tester) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.linux;
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+      SharedPreferences.setMockInitialValues({'openRecentOnLaunch': true});
+      state = await LibraryState.load();
+      await state.savePosition(
+        novel: book,
+        chapter: 0,
+        offset: .4,
+        maximum: 1,
+        width: 390,
+      );
+      repository = _DelayedRepository();
+      await tester.pumpWidget(NovelApp(state: state, repository: repository));
+      expect(find.byType(ReaderOpeningCover), findsOneWidget);
+      expect(find.byType(HomeShell), findsNothing);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(find.byType(ReaderLoaderPage), findsOneWidget);
+      expect(find.byType(HomeShell), findsNothing);
+      expect(repository.directoryRequests, 1);
+      // Back constructs the home for the first time; persisted tab IDs survive.
+      Navigator.of(tester.element(find.byType(ReaderLoaderPage))).pop();
+      await tester.pumpAndSettle();
+      expect(find.byType(HomeShell), findsOneWidget);
+      final navigation = HomeNavigation(state, null);
+      expect(navigation.tabs, [1, 2, 3]);
+      expect(navigation.destination(1), 1);
+      expect(navigation.destination(2), 2);
+      expect(navigation.destination(0), 2);
+      navigation.dispose();
+      final dock = tester.widget<GlassDock>(find.byType(GlassDock));
+      expect(dock.items.map((item) => item.label), ['书架', '本地', '我的']);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpAndSettle();
+      debugDefaultTargetPlatformOverride = null;
+    },
+  );
+
+  testWidgets('cancel launch cover while startup metadata is pending', (
+    tester,
+  ) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.linux;
+    addTearDown(() => debugDefaultTargetPlatformOverride = null);
+    SharedPreferences.setMockInitialValues({'openRecentOnLaunch': true});
+    final prefs = await SharedPreferences.getInstance();
+    state = LibraryState(prefs);
+    await state.savePosition(
+      novel: book,
+      chapter: 0,
+      offset: .4,
+      maximum: 1,
+      width: 390,
+    );
+    // Use load to consume the real serialized launch preference and history.
+    state.dispose();
+    state = await LibraryState.load();
+    repository = _DelayedRepository();
+    final updates = _WaitingUpdates(prefs);
+    addTearDown(updates.dispose);
+    await tester.pumpWidget(
+      NovelApp(state: state, repository: repository, updates: updates),
+    );
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(find.byType(HomeShell), findsNothing);
+    await tester.binding.handlePopRoute();
+    await tester.pump();
+    expect(find.byType(HomeShell), findsOneWidget);
+    updates.ready.complete();
+    await tester.pumpAndSettle();
+    expect(find.byType(ReaderLoaderPage), findsNothing);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpAndSettle();
+    debugDefaultTargetPlatformOverride = null;
+  });
+
+  testWidgets('detail reveal overlaps incoming cover flight', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    state = await LibraryState.load();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: TextButton(
+              onPressed: () => openDetail(
+                context,
+                book,
+                state,
+                const DemoNovelRepository(),
+                coverHeroTag: 'test-cover',
+              ),
+              child: const Text('打开详情'),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('打开详情'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 350));
+    await tester.pump(const Duration(milliseconds: 150));
+    final reveal = tester.widget<RevealFromTop>(
+      find.byKey(const ValueKey('detail-meta-reveal')),
+    );
+    expect(reveal.animation.value, greaterThan(0));
+    expect(
+      ModalRoute.of(tester.element(find.byType(DetailPage)))!.animation!.status,
+      AnimationStatus.forward,
+    );
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
 
   for (final variant in [
     (ReaderMode.paged, true),
@@ -148,7 +279,7 @@ void main() {
           find.byType(ReaderPagedView),
         );
         expect(view.controller.ready, isFalse);
-        expect(find.text('正在继续阅读…'), findsOneWidget);
+        expect(find.byType(ReaderOpeningCover), findsOneWidget);
         await tester.runAsync(() async {
           image.complete(bytes);
           await pendingImage;
@@ -156,7 +287,7 @@ void main() {
         await tester.pumpAndSettle();
         expect(view.controller.ready, isTrue);
         expect(view.controller.anchor?.paragraph, 10);
-        expect(find.text('正在继续阅读…'), findsNothing);
+        expect(find.byType(ReaderOpeningCover), findsNothing);
         expect(tester.takeException(), isNull);
         await tester.pumpWidget(const SizedBox.shrink());
       },
@@ -185,7 +316,7 @@ void main() {
         );
         if (views.evaluate().isEmpty) continue;
         scroll = tester.widget<CustomScrollView>(views.first).controller;
-        if (find.text('正在继续阅读…').evaluate().isEmpty &&
+        if (find.byType(ReaderOpeningCover).evaluate().isEmpty &&
             scroll?.hasClients == true) {
           firstRevealedOffset ??= scroll!.offset;
         }
@@ -203,15 +334,15 @@ void main() {
     'one cover spans directory and chapter preparation without remount',
     (tester) async {
       await open(tester);
-      expect(find.text('正在继续阅读…'), findsOneWidget);
+      expect(find.byType(ReaderOpeningCover), findsOneWidget);
       repository.directory.complete(book.chapters.take(1).toList());
       await tester.pumpAndSettle();
       expect(find.byType(ReaderPage), findsOneWidget);
-      expect(find.text('正在继续阅读…'), findsOneWidget);
+      expect(find.byType(ReaderOpeningCover), findsOneWidget);
       final reader = tester.state(find.byType(ReaderPage));
       repository.text.complete('第一章\n合成测试正文，用于验证启动续读的加载交接。');
       await tester.pumpAndSettle();
-      expect(find.text('正在继续阅读…'), findsNothing);
+      expect(find.byType(ReaderOpeningCover), findsNothing);
       expect(tester.state(find.byType(ReaderPage)), same(reader));
       expect(repository.contentRequests, 1);
       expect(tester.takeException(), isNull);
@@ -225,7 +356,7 @@ void main() {
     await open(tester);
     repository.directory.completeError(const FormatException('测试目录不可用'));
     await tester.pumpAndSettle();
-    expect(find.text('正在继续阅读…'), findsNothing);
+    expect(find.byType(ReaderOpeningCover), findsNothing);
     expect(find.text('测试目录不可用'), findsOneWidget);
     expect(find.text('暂时无法打开本书'), findsOneWidget);
     expect(tester.takeException(), isNull);
@@ -240,7 +371,7 @@ void main() {
       await tester.pumpAndSettle();
       repository.text.complete('测试正文。');
       await tester.pumpAndSettle();
-      expect(find.text('正在继续阅读…'), findsNothing);
+      expect(find.byType(ReaderOpeningCover), findsNothing);
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox.shrink());
     },
@@ -252,22 +383,52 @@ void main() {
     await tester.pumpAndSettle();
     repository.text.completeError(const FormatException('测试正文不可用'));
     await tester.pumpAndSettle();
-    expect(find.text('正在继续阅读…'), findsNothing);
+    expect(find.byType(ReaderOpeningCover), findsNothing);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
-  testWidgets('large text in short landscape viewport keeps cover scrollable', (
-    tester,
-  ) async {
-    tester.view.devicePixelRatio = 1;
-    tester.view.physicalSize = const Size(600, 280);
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-    await open(tester, scale: 2);
-    expect(find.text('正在继续阅读…'), findsOneWidget);
-    expect(find.byType(SingleChildScrollView), findsWidgets);
-    expect(tester.takeException(), isNull);
-    await tester.pumpWidget(const SizedBox.shrink());
-  });
+  testWidgets(
+    'cover fills portrait width and stays inside short landscape viewport',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(600, 280);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await open(tester, scale: 2);
+      expect(find.byType(ReaderOpeningCover), findsOneWidget);
+      final cover = tester.widget<NovelCover>(
+        find.descendant(
+          of: find.byType(ReaderOpeningCover),
+          matching: find.byType(NovelCover),
+        ),
+      );
+      expect(cover.width, closeTo((280 - 32) / 1.4, .1));
+      expect(cover.height, closeTo(280 - 32, .1));
+      expect(cover.fit, BoxFit.contain);
+      expect(find.text('正在继续阅读…'), findsNothing);
+      expect(find.text('返回书库'), findsNothing);
+      expect(
+        find.text(book.title).evaluate().length,
+        find
+            .descendant(
+              of: find.byType(NovelCover),
+              matching: find.text(book.title),
+            )
+            .evaluate()
+            .length,
+      );
+      tester.view.physicalSize = const Size(500, 983);
+      await tester.pump();
+      final portrait = tester.widget<NovelCover>(
+        find.descendant(
+          of: find.byType(ReaderOpeningCover),
+          matching: find.byType(NovelCover),
+        ),
+      );
+      expect(portrait.width, 492);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
 }

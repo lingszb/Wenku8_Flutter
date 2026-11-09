@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'app_ui.dart';
@@ -82,6 +83,19 @@ Future<void> main() async {
   }
   if (repository is OfflineNovelRepository && repository.local != null) {
     await reconcileLocalSeries(repository.local!, state);
+    repository.local!.readingCoverChapterId = (id) {
+      final current = state.positionFor(id);
+      final snapshot = repository.local!.seriesSnapshot(id);
+      final confirmed =
+          snapshot != null && state.shouldRemindReadingJump(snapshot)
+          ? current?.returnPoint
+          : current;
+      if (confirmed == null) return null;
+      if (confirmed.chapterId > 0) return confirmed.chapterId;
+      return snapshot != null && confirmed.chapter < snapshot.chapters.length
+          ? snapshot.chapters[confirmed.chapter].id
+          : null;
+    };
   }
   final customSpeech = LocalPlatform.listening ? CustomSpeechSettings() : null;
   await customSpeech?.load();
@@ -168,6 +182,7 @@ class _NovelAppState extends State<NovelApp> with WidgetsBindingObserver {
   Locale _systemLocale = chineseLocale(
     WidgetsBinding.instance.platformDispatcher.locale,
   );
+  final _startupCover = ValueNotifier<Novel?>(null);
   bool _startupReadingConsumed = false;
   bool _startupInboxReady = false, _startupUpdatesReady = false;
   bool _startupReadingQueued = false;
@@ -178,6 +193,23 @@ class _NovelAppState extends State<NovelApp> with WidgetsBindingObserver {
     state.settingsChanges.addListener(_orientationChanged);
     _orientationChanged();
     _startupReadingConsumed = !state.openRecentOnLaunch;
+    final recent = state.readingHistoryIds.firstOrNull;
+    if (!_startupReadingConsumed && recent != null) {
+      final source = repository;
+      _startupCover.value =
+          (source is OfflineNovelRepository
+              ? source.local?.book(recent)
+              : null) ??
+          state.cachedNovel(recent) ??
+          Novel(
+            id: recent,
+            title: '书籍 $recent',
+            author: '',
+            genre: '',
+            summary: '',
+            colors: const [Colors.grey, Colors.black],
+          );
+    }
     _updateNavigation.addListener(_queueStartupReading);
     updates?.addListener(_queueStartupReading);
     if (!_startupReadingConsumed) unawaited(_prepareStartupReading());
@@ -206,6 +238,7 @@ class _NovelAppState extends State<NovelApp> with WidgetsBindingObserver {
 
   void _readingWidgetRequested(String destination) {
     _startupReadingConsumed = true;
+    _dismissStartupCover();
     _widgetDestination = destination;
     _queueReadingWidgetRoute();
   }
@@ -361,12 +394,26 @@ class _NovelAppState extends State<NovelApp> with WidgetsBindingObserver {
   void _bookOpenRequested() {
     // Warm file intents can arrive while release notes are delaying startup.
     _startupReadingConsumed = true;
+    _dismissStartupCover();
+  }
+
+  void _dismissStartupCover() {
+    if (!mounted || _startupCover.value == null) return;
+    if (SchedulerBinding.instance.schedulerPhase ==
+        SchedulerPhase.persistentCallbacks) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _startupCover.value = null;
+      });
+    } else {
+      _startupCover.value = null;
+    }
   }
 
   void _queueStartupReading() {
     if (!mounted || _startupReadingConsumed || _startupReadingQueued) return;
     if (_updateNavigation.hasPageBeyondRoot) {
       _startupReadingConsumed = true;
+      _dismissStartupCover();
       return;
     }
     _startupReadingQueued = true;
@@ -375,6 +422,7 @@ class _NovelAppState extends State<NovelApp> with WidgetsBindingObserver {
       if (!mounted || _startupReadingConsumed) return;
       if (!state.openRecentOnLaunch || _updateNavigation.hasPageBeyondRoot) {
         _startupReadingConsumed = true;
+        _dismissStartupCover();
         return;
       }
       final lifecycle = WidgetsBinding.instance.lifecycleState;
@@ -388,8 +436,12 @@ class _NovelAppState extends State<NovelApp> with WidgetsBindingObserver {
       }
       _startupReadingConsumed = true;
       final id = state.readingHistoryIds.firstOrNull;
-      if (id == null) return;
+      if (id == null) {
+        _dismissStartupCover();
+        return;
+      }
       final book =
+          _startupCover.value ??
           state.cachedNovel(id) ??
           Novel(
             id: id,
@@ -408,9 +460,10 @@ class _NovelAppState extends State<NovelApp> with WidgetsBindingObserver {
             repository: repository,
             openingCover: true,
           ),
-          reduceMotion: state.reduceMotion,
+          // The launch cover already occupies the root; avoid sliding it in again.
+          reduceMotion: true,
           slot: ('startup-reading', id),
-        ),
+        ).whenComplete(_dismissStartupCover),
       );
     });
     WidgetsBinding.instance.ensureVisualUpdate();
@@ -626,6 +679,7 @@ class _NovelAppState extends State<NovelApp> with WidgetsBindingObserver {
   @override
   void dispose() {
     _widgetCards.dispose();
+    _startupCover.dispose();
     state.settingsChanges.removeListener(_orientationChanged);
     WidgetsBinding.instance.removeObserver(this);
     _updateNavigation.dispose();
@@ -743,13 +797,30 @@ class _NovelAppState extends State<NovelApp> with WidgetsBindingObserver {
                       if (MediaQuery.sizeOf(context).isEmpty) {
                         return const SizedBox.shrink();
                       }
-                      final home = RepaintBoundary(
-                        child: HomeShell(
-                          key: _home,
-                          state: state,
-                          repository: repository,
-                          network: widget.network,
-                        ),
+                      final home = ValueListenableBuilder<Novel?>(
+                        valueListenable: _startupCover,
+                        builder: (context, book, _) => book != null
+                            ? PopScope<void>(
+                                canPop: false,
+                                onPopInvokedWithResult: (didPop, result) {
+                                  if (!didPop) {
+                                    _startupReadingConsumed = true;
+                                    _dismissStartupCover();
+                                  }
+                                },
+                                child: ReaderOpeningCover(
+                                  key: const ValueKey('startup-reading-cover'),
+                                  novel: book,
+                                ),
+                              )
+                            : RepaintBoundary(
+                                child: HomeShell(
+                                  key: _home,
+                                  state: state,
+                                  repository: repository,
+                                  network: widget.network,
+                                ),
+                              ),
                       );
                       final repo = repository;
                       if (LocalPlatform.fileActions &&

@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:wenku8_flutter/book_collection_layout.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:wenku8_flutter/book_collection_grid.dart';
@@ -109,6 +111,47 @@ void main() {
 
   for (final brightness in Brightness.values) {
     testWidgets(
+      'resume information and footer open the same saved chapter on $brightness',
+      (tester) async {
+        SharedPreferences.setMockInitialValues({});
+        final state = await LibraryState.load();
+        addTearDown(state.dispose);
+        await state.savePosition(
+          novel: book,
+          chapter: 1,
+          offset: .11,
+          maximum: 1,
+          width: 390,
+        );
+        final opened = <int>[];
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: ThemeData(brightness: brightness),
+            home: DetailPage(
+              novel: book,
+              state: state,
+              repository: const DemoNovelRepository(),
+              onRead: opened.add,
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        final information = find.byKey(
+          const ValueKey('detail-resume-information'),
+        );
+        await tester.ensureVisible(information);
+        await tester.pumpAndSettle();
+        await tester.tap(information);
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const ValueKey('detail-read-button')));
+        await tester.pumpAndSettle();
+        expect(opened, [1, 1]);
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+    );
+
+    testWidgets(
       'grid and list retain series and progress at large text in $brightness',
       (tester) async {
         tester.view.physicalSize = const Size(320, 900);
@@ -205,6 +248,11 @@ void main() {
           const ValueKey('shelf-author-progress-1042'),
         );
         expect(tester.widget<LinearProgressIndicator>(progress).value, 0);
+        expect(
+          find.byKey(const ValueKey('shelf-author-percentage-1042')),
+          findsOneWidget,
+        );
+        expect(find.text('0%'), findsWidgets);
         await state.savePosition(
           novel: book,
           chapter: 0,
@@ -214,9 +262,78 @@ void main() {
         );
         await tester.pumpAndSettle();
         expect(tester.widget<LinearProgressIndicator>(progress).value, .25);
+        expect(find.text('25%'), findsWidgets);
         expect(tester.takeException(), isNull);
       },
     );
+  }
+
+  for (final width in [320.0, 390.0]) {
+    testWidgets('pure grid reserves real font metrics at width $width', (
+      tester,
+    ) async {
+      await tester.runAsync(() async {
+        final loader = FontLoader('GridMetricsRegression')
+          ..addFont(
+            rootBundle.load('assets/fonts/ReadingSerifDisplay-Bold.ttf'),
+          );
+        await loader.load();
+      });
+      tester.view.physicalSize = Size(width, 850);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      for (final scale in [1.0, 2.0]) {
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: ThemeData(
+              fontFamily: 'GridMetricsRegression',
+              brightness: scale == 1 ? Brightness.light : Brightness.dark,
+            ),
+            builder: (context, child) => MediaQuery(
+              data: MediaQuery.of(
+                context,
+              ).copyWith(textScaler: TextScaler.linear(scale)),
+              child: child!,
+            ),
+            home: Scaffold(
+              body: CustomScrollView(
+                slivers: [
+                  SliverPadding(
+                    padding: const EdgeInsets.all(16),
+                    sliver: BookCollectionSliver(
+                      grid: true,
+                      gridShowSeries: true,
+                      gridShowProgressBar: true,
+                      gridDensity: const BookGridDensity.sized(
+                        BookGridSize.small,
+                      ),
+                      itemCount: 1,
+                      itemBuilder: (context, index) => BookGridTile(
+                        book: book,
+                        onTap: () {},
+                        trailing: const SizedBox(width: 48),
+                        seriesLabel: '系列 · 链锯人',
+                        progress: '96.3%',
+                        progressValue: .963,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        final metadata = tester.getRect(
+          find.byKey(const ValueKey('grid-metadata-1042')),
+        );
+        final bar = tester.getRect(find.byType(LinearProgressIndicator));
+        expect(bar.bottom, lessThanOrEqualTo(metadata.bottom + .1));
+        expect(tester.takeException(), isNull);
+      }
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
   }
 
   testWidgets(

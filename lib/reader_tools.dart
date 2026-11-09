@@ -82,6 +82,7 @@ class ReaderChapterProgress extends StatefulWidget {
     this.chapterLabel,
     this.onPrevious,
     this.onNext,
+    this.onRestoreProgress,
     this.progressFraction,
   });
   final ReadingPosition? position;
@@ -91,7 +92,7 @@ class ReaderChapterProgress extends StatefulWidget {
   final ValueChanged<bool>? onPreviewChanged;
   final bool compact;
   final String? chapterLabel;
-  final VoidCallback? onPrevious, onNext;
+  final VoidCallback? onPrevious, onNext, onRestoreProgress;
 
   /// New compact usage may adapt source coordinates; the legacy drawer keeps
   /// its saved pixel fraction and does not require a source anchor.
@@ -226,6 +227,14 @@ class _ReaderChapterProgressState extends State<ReaderChapterProgress> {
                           widget.onPreviewChanged?.call(active);
                         },
                       ),
+                    ),
+                    GlassIconButton(
+                      key: const ValueKey('reader-restore-chapter-progress'),
+                      icon: CupertinoIcons.refresh,
+                      label: '回到拖动前的位置',
+                      liveGlass: false,
+                      transparent: true,
+                      onPressed: widget.onRestoreProgress,
                     ),
                     const SizedBox(width: 4),
                     GlassIconButton(

@@ -123,7 +123,6 @@ import 'ui_notifiers.dart';
 import 'route_identity.dart';
 import 'feature_pages.dart';
 import 'legacy_import_page.dart';
-import 'book_share_action.dart';
 
 export 'app_ui.dart' show sectionHeader;
 
@@ -1225,66 +1224,9 @@ class _ReaderLoaderPageState extends State<ReaderLoaderPage>
                     excluding: _openingSettled,
                     child: Opacity(
                       opacity: 1 - progress,
-                      child: ColoredBox(
-                        color: Theme.of(context).colorScheme.surface,
-                        child: Center(
-                          child: SafeArea(
-                            child: LayoutBuilder(
-                              builder: (context, constraints) {
-                                final width = math.min(
-                                  220.0,
-                                  math.min(
-                                    constraints.maxWidth * .55,
-                                    constraints.maxHeight * .42,
-                                  ),
-                                );
-                                return SingleChildScrollView(
-                                  padding: const EdgeInsets.symmetric(
-                                    vertical: 16,
-                                  ),
-                                  child: Column(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Transform(
-                                        alignment: Alignment.centerLeft,
-                                        transform: Matrix4.identity()
-                                          ..setEntry(3, 2, .0015)
-                                          ..rotateY(-math.pi * .48 * progress),
-                                        child: RepaintBoundary(
-                                          child: NovelCover(
-                                            widget.novel,
-                                            width: width,
-                                            height: width * 1.4,
-                                          ),
-                                        ),
-                                      ),
-                                      const SizedBox(height: 24),
-                                      Padding(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 24,
-                                        ),
-                                        child: AppText(
-                                          widget.novel.title,
-                                          textAlign: TextAlign.center,
-                                          maxLines: 2,
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 10),
-                                      const AppText('正在继续阅读…'),
-                                      const SizedBox(height: 16),
-                                      GlassTextButton(
-                                        onPressed: () =>
-                                            Navigator.maybePop(context),
-                                        child: const AppText('返回书库'),
-                                      ),
-                                    ],
-                                  ),
-                                );
-                              },
-                            ),
-                          ),
-                        ),
+                      child: ReaderOpeningCover(
+                        novel: widget.novel,
+                        progress: progress,
                       ),
                     ),
                   ),
@@ -1295,6 +1237,47 @@ class _ReaderLoaderPageState extends State<ReaderLoaderPage>
       ],
     );
   }
+}
+
+/// The first launch frame and the reader handoff share the same cover layout.
+class ReaderOpeningCover extends StatelessWidget {
+  const ReaderOpeningCover({super.key, required this.novel, this.progress = 0});
+  final Novel novel;
+  final double progress;
+
+  @override
+  Widget build(BuildContext context) => ColoredBox(
+    color: Theme.of(context).colorScheme.surface,
+    child: SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 16),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final width = math.min(
+              constraints.maxWidth,
+              constraints.maxHeight / 1.4,
+            );
+            return Center(
+              child: Transform(
+                alignment: Alignment.centerLeft,
+                transform: Matrix4.identity()
+                  ..setEntry(3, 2, .0015)
+                  ..rotateY(-math.pi * .48 * progress),
+                child: RepaintBoundary(
+                  child: NovelCover(
+                    novel,
+                    width: width,
+                    height: width * 1.4,
+                    fit: BoxFit.contain,
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    ),
+  );
 }
 
 void openReadingHistory(
@@ -2791,6 +2774,56 @@ class SettingsPage extends StatelessWidget {
             value: state.openRecentOnLaunch,
             onChanged: state.setOpenRecentOnLaunch,
           ),
+          const Divider(height: 22),
+          const Align(
+            alignment: Alignment.centerLeft,
+            child: AppText(
+              '进度跨度提醒线',
+              style: TextStyle(fontWeight: FontWeight.w600),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            children: [
+              for (final scope in [
+                ReadingJumpReminderScope.chapter,
+                ReadingJumpReminderScope.book,
+              ])
+                GlassTextButton(
+                  key: ValueKey('settings-jump-scope-${scope.name}'),
+                  selected: state.readingJumpReminderScope == scope,
+                  onPressed: () => _savePreference(
+                    context,
+                    () => state.setReadingJumpReminderScope(scope),
+                  ),
+                  child: AppText(
+                    scope == ReadingJumpReminderScope.chapter ? '按章节' : '按全书',
+                  ),
+                ),
+            ],
+          ),
+          AppText(
+            '${state.readingJumpReminderScope == ReadingJumpReminderScope.chapter ? '章内' : '全书'}进度相差至少 ${state.readingJumpReminderPercent}% 时提醒；最低 1%。${state.readingJumpReminderScope == ReadingJumpReminderScope.chapter ? '跨章跳转直接提醒。' : ''}低于提醒线仍保留原阅读点，可在目录找回。',
+            style: const TextStyle(fontSize: 12, height: 1.5),
+          ),
+          ReaderValueSlider(
+            sliderKey: const ValueKey('settings-reading-jump-threshold'),
+            label:
+                state.readingJumpReminderScope ==
+                    ReadingJumpReminderScope.chapter
+                ? '章内跨度提醒线'
+                : '全书跨度提醒线',
+            value: state.readingJumpReminderPercent.toDouble(),
+            min: 1,
+            max: 100,
+            divisions: 99,
+            format: (value) => '${value.round()}%',
+            onCommitted: (value) => _savePreference(
+              context,
+              () => state.setReadingJumpReminderPercent(value.round()),
+            ),
+          ),
         ],
       ),
     ),
@@ -3759,7 +3792,9 @@ class _DetailLoaderPageState extends State<DetailLoaderPage> {
   void initState() {
     super.initState();
     if (widget.repository case final OfflineNovelRepository offline) {
-      final saved = offline.cache.book(widget.novel.id)?.novel;
+      final saved = isLocalBook(widget.novel.id)
+          ? offline.local?.book(widget.novel.id)
+          : offline.cache.book(widget.novel.id)?.novel;
       if (saved != null && saved.chapters.isNotEmpty) _cached = saved;
     }
     unawaited(_seedFromCache());
@@ -3780,7 +3815,11 @@ class _DetailLoaderPageState extends State<DetailLoaderPage> {
 
   Future<Novel> _load() async {
     final detail = await widget.repository.detail(widget.novel);
-    final chapters = await widget.repository.chapters(widget.novel.id);
+    final chapters =
+        widget.repository is OfflineNovelRepository &&
+            detail.chapters.isNotEmpty
+        ? detail.chapters
+        : await widget.repository.chapters(widget.novel.id);
     final loaded = detail.withChapters(chapters);
     await widget.state.rememberNovel(loaded);
     return loaded;
@@ -3874,6 +3913,7 @@ class _DetailPageState extends State<DetailPage> with TickerProviderStateMixin {
       .catalogueReversed;
   int? _resumeChapter;
   int? _resumeDirectory;
+  int? _returnDirectory;
   final Set<String> _expandedVolumes = {};
   final Set<String> _directoryVolumeKeys = {};
   int? _directoryBook;
@@ -4022,9 +4062,9 @@ class _DetailPageState extends State<DetailPage> with TickerProviderStateMixin {
     super.didChangeDependencies();
     final animation = ModalRoute.of(context)?.animation;
     if (_routeAnimation != animation) {
-      _routeAnimation?.removeStatusListener(_routeChanged);
+      _routeAnimation?.removeListener(_routeChanged);
       _routeAnimation = animation;
-      animation?.addStatusListener(_routeChanged);
+      animation?.addListener(_routeChanged);
     }
     if (_reduceMotion) {
       _intro.stop();
@@ -4033,8 +4073,7 @@ class _DetailPageState extends State<DetailPage> with TickerProviderStateMixin {
       _contentIntro.value = 1;
       _introStarted = true;
       _contentStarted = !isLoading;
-    } else if (animation == null ||
-        animation.status == AnimationStatus.completed) {
+    } else {
       // A newly installed route's proxy can briefly report completed before
       // Navigator attaches the push animation at the end of its first frame.
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -4043,13 +4082,20 @@ class _DetailPageState extends State<DetailPage> with TickerProviderStateMixin {
     }
   }
 
-  void _routeChanged(AnimationStatus status) {
-    if (mounted && status == AnimationStatus.completed) _startIntro();
+  void _routeChanged() {
+    if (!mounted) return;
+    _startIntro();
+    if (_routeAnimation?.status == AnimationStatus.completed &&
+        transitionNovel?.coverUrl != novel.coverUrl) {
+      setState(() {});
+    }
   }
 
   void _startIntro() {
     if (_routeAnimation != null &&
-        _routeAnimation!.status != AnimationStatus.completed) {
+        _routeAnimation!.status != AnimationStatus.completed &&
+        !(_routeAnimation!.status == AnimationStatus.forward &&
+            _routeAnimation!.value >= .3)) {
       return;
     }
     if (!_introStarted) {
@@ -4090,7 +4136,7 @@ class _DetailPageState extends State<DetailPage> with TickerProviderStateMixin {
   @override
   void dispose() {
     state.readerSettingsChanges.removeListener(_catalogueSettingsChanged);
-    _routeAnimation?.removeStatusListener(_routeChanged);
+    _routeAnimation?.removeListener(_routeChanged);
     _intro.dispose();
     _contentIntro.dispose();
     _directoryReflow.dispose();
@@ -4107,6 +4153,17 @@ class _DetailPageState extends State<DetailPage> with TickerProviderStateMixin {
             _resumeChapter!,
             paragraph: state.positionFor(novel.id)?.paragraphIndex ?? 0,
             offset: state.positionFor(novel.id)?.textOffset ?? 0,
+          );
+    final returnPoint = state.positionFor(novel.id)?.returnPoint;
+    final returnChapter = returnPoint == null
+        ? null
+        : state.chapterForPosition(novel, returnPoint);
+    _returnDirectory = returnChapter == null
+        ? null
+        : novel.directoryIndexFor(
+            returnChapter,
+            paragraph: returnPoint!.paragraphIndex ?? 0,
+            offset: returnPoint.textOffset ?? 0,
           );
     final directory = _directory();
     final safe = MediaQuery.viewPaddingOf(context);
@@ -4173,17 +4230,6 @@ class _DetailPageState extends State<DetailPage> with TickerProviderStateMixin {
                                             child: _synopsis(context),
                                           )
                                         : const SizedBox.shrink(),
-                                  ),
-                                  Padding(
-                                    padding: const EdgeInsets.only(top: 24),
-                                    child: RevealFromTop(
-                                      animation: _contentIntro,
-                                      start: .34,
-                                      placeholder: const LoadingSkeleton(
-                                        layout: SkeletonLayout.actions,
-                                      ),
-                                      child: BookShareAction(novel: novel),
-                                    ),
                                   ),
                                   Padding(
                                     padding: const EdgeInsets.only(top: 30),
@@ -4315,7 +4361,9 @@ class _DetailPageState extends State<DetailPage> with TickerProviderStateMixin {
           key: const ValueKey('detail-view-cover'),
           onTap: novel.coverUrl == null ? null : _viewCover,
           child: NovelCover(
-            transitionNovel ?? novel,
+            _routeAnimation?.status == AnimationStatus.forward
+                ? transitionNovel ?? novel
+                : novel,
             width: coverWidth,
             height: coverWidth * 1.4,
             heroTag: coverHeroTag,
@@ -4584,55 +4632,63 @@ class _DetailPageState extends State<DetailPage> with TickerProviderStateMixin {
     );
     final volume = novel.chapters[index].volumeTitle;
     final ink = Theme.of(context).colorScheme.onSurface;
-    return ArchiveRegistration(
-      child: Container(
-        key: const ValueKey('detail-resume-information'),
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          border: Border.all(
-            color: Theme.of(
-              context,
-            ).colorScheme.outlineVariant.withValues(alpha: .65),
-            width: .7,
-          ),
-          borderRadius: BorderRadius.circular(4),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            AppText(
-              '读到 ${volume.isEmpty ? '' : '$volume · '}$title',
-              style: const TextStyle(
-                fontSize: 14,
-                height: 1.5,
-                fontWeight: FontWeight.w600,
+    return Semantics(
+      button: true,
+      label: '继续阅读',
+      child: JellyTapSurface(
+        tapKey: const ValueKey('detail-resume-continue'),
+        onTap: () => _openReader(context, index),
+        child: ArchiveRegistration(
+          child: Container(
+            key: const ValueKey('detail-resume-information'),
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              border: Border.all(
+                color: Theme.of(
+                  context,
+                ).colorScheme.outlineVariant.withValues(alpha: .65),
+                width: .7,
               ),
+              borderRadius: BorderRadius.circular(4),
             ),
-            if (saved != null) ...[
-              const SizedBox(height: 11),
-              Row(
-                children: [
-                  Expanded(
-                    child: LinearProgressIndicator(
-                      value: saved.fraction.clamp(0.0, 1.0),
-                      minHeight: 3,
-                      color: ink,
-                      backgroundColor: ink.withValues(alpha: .14),
-                      borderRadius: BorderRadius.circular(2),
-                    ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                AppText(
+                  '读到 ${volume.isEmpty ? '' : '$volume · '}$title',
+                  style: const TextStyle(
+                    fontSize: 14,
+                    height: 1.5,
+                    fontWeight: FontWeight.w600,
                   ),
-                  const SizedBox(width: 12),
-                  AppText(
-                    '本章 ${(saved.fraction * 100).floor()}%',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
+                ),
+                if (saved != null) ...[
+                  const SizedBox(height: 11),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: LinearProgressIndicator(
+                          value: saved.fraction.clamp(0.0, 1.0),
+                          minHeight: 3,
+                          color: ink,
+                          backgroundColor: ink.withValues(alpha: .14),
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      AppText(
+                        '本章 ${(saved.fraction * 100).floor()}%',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
                   ),
                 ],
-              ),
-            ],
-          ],
+              ],
+            ),
+          ),
         ),
       ),
     );
@@ -5077,6 +5133,10 @@ class _DetailPageState extends State<DetailPage> with TickerProviderStateMixin {
                         height: 1.5,
                       ),
                     ),
+                    if (index == _returnDirectory) ...[
+                      const SizedBox(height: 4),
+                      const AppText('跳转前阅读点', style: TextStyle(fontSize: 12)),
+                    ],
                     if (current) ...[
                       const SizedBox(height: 4),
                       AppText(
@@ -5138,6 +5198,27 @@ class _DetailPageState extends State<DetailPage> with TickerProviderStateMixin {
     if (_readerOpening || !mounted || !context.mounted) return;
     _readerOpening = true;
     try {
+      final origin = state.positionFor(novel.id);
+      final recorded = origin == null
+          ? null
+          : state.chapterForPosition(novel, origin);
+      if (origin != null &&
+          recorded != null &&
+          (recorded != chapter || target != null)) {
+        try {
+          await state.beginReadingJump(
+            novel,
+            origin,
+            targetProgress: chapter / novel.chapters.length,
+          );
+        } catch (_) {
+          if (mounted && context.mounted) {
+            showNovelFeedback(context, '阅读点未能保存，已取消打开，请重试');
+          }
+          return;
+        }
+        if (!mounted || !context.mounted) return;
+      }
       await pushNovelPage<void>(
         context,
         ReaderPage(
@@ -5394,6 +5475,7 @@ class _ReaderPageState extends State<ReaderPage>
         _verifiedEligible &&
         (_chapter != origin.$1 || _paged.page != origin.$2)) {
       _pageAdvanceOrigin = null;
+      _invalidateChapterScrubReturn();
       _verifiedReading.advance();
     }
     _saveWhenIdle();
@@ -5553,6 +5635,8 @@ class _ReaderPageState extends State<ReaderPage>
       }();
   DateTime? _exitRequestedAt;
   bool _allowExit = false;
+  bool _jumpDecisionOpen = false;
+  int? _returningToChapter;
   final _preparedContent = <int, ReaderContent>{};
   final _automaticContent = <int, (ReaderContent, ReaderContent)>{};
   final _contentLoads = <int, Future<ReaderContent>>{};
@@ -5610,6 +5694,9 @@ class _ReaderPageState extends State<ReaderPage>
   int? _chromeProgressFrame;
   double? _chromeProgressPending;
   bool _chromeProgressActive = false;
+  ReadingPosition? _chromeProgressOrigin;
+  ReadingPosition? _chapterScrubReturnPosition;
+  double? _chromeProgressOriginFraction;
   final _chromeSourceProgress =
       ValueNotifier<
         ({int chapter, int generation, ReaderContent content, double fraction})?
@@ -6387,6 +6474,7 @@ class _ReaderPageState extends State<ReaderPage>
       setState(() {});
       return;
     }
+    _chapterScrubReturnPosition = null;
     if (_chromeProgressActive) {
       _chromeProgressActive = false;
       _typographyPreviewing = false;
@@ -6519,6 +6607,8 @@ class _ReaderPageState extends State<ReaderPage>
       return;
     }
     _stopAutoScroll();
+    final origin =
+        _currentPosition() ?? widget.state.positionFor(widget.novel.id);
     _catalogueOpen = true;
     _followTicket++;
     _followScroll.cancel();
@@ -6536,6 +6626,7 @@ class _ReaderPageState extends State<ReaderPage>
           reduceMotion: widget.state.reduceMotion,
           currentChapter: _chapter,
           position: _currentPosition(),
+          returnPoint: widget.state.positionFor(widget.novel.id)?.returnPoint,
           initialReversed: widget.state.readerPreferences.catalogueReversed,
           onOrderChanged: (reversed) => widget.state.setReaderPreferences(
             widget.state.readerPreferences.copyWith(
@@ -6548,10 +6639,36 @@ class _ReaderPageState extends State<ReaderPage>
         ),
       );
       if (!mounted) return;
-      if (action is int && action != _chapter) {
-        _go(action);
-      } else if (action is BookReadingTarget) {
-        _openBookTarget(action);
+      if (action == ReaderCatalogueAction.returnToReadingPoint) {
+        await _resolveReadingDetour(restore: true);
+      } else if (action is int && action != _chapter ||
+          action is BookReadingTarget) {
+        if (origin == null) {
+          showNovelFeedback(context, '当前阅读点尚未就绪，请稍后再试');
+          return;
+        }
+        try {
+          _jumpDecisionOpen = true;
+          final targetChapter = action is int
+              ? action
+              : _sourceBook.chapters.indexWhere(
+                  (c) => c.id == (action as BookReadingTarget).chapterId,
+                );
+          await widget.state.beginReadingJump(
+            _sourceBook,
+            origin,
+            targetProgress: targetChapter < 0
+                ? null
+                : targetChapter / _sourceBook.chapters.length,
+          );
+          if (!mounted) return;
+          if (action is int) _go(action);
+          if (action is BookReadingTarget) _openBookTarget(action);
+        } catch (_) {
+          if (mounted) showNovelFeedback(context, '原阅读点未能保存，已取消跳转，请重试');
+        } finally {
+          _jumpDecisionOpen = false;
+        }
       }
     } finally {
       _catalogueOpen = false;
@@ -7030,6 +7147,7 @@ class _ReaderPageState extends State<ReaderPage>
                     ))
             .clamp(position.minScrollExtent, position.maxScrollExtent);
     if (target != position.pixels) {
+      _invalidateChapterScrubReturn();
       _verifiedReading.advance();
     } else if (direction > 0 && _chapter == _sourceBook.chapters.length - 1) {
       unawaited(_completeReadingAtEnd());
@@ -7293,6 +7411,11 @@ class _ReaderPageState extends State<ReaderPage>
   }
 
   void _savePosition({bool notify = true, bool finalSave = false}) {
+    if (_jumpDecisionOpen) return;
+    if (_returningToChapter != null) {
+      if (_chapter != _returningToChapter || !_ready || _restoring) return;
+      _returningToChapter = null;
+    }
     // Explicit save/restore/exit supersedes any delayed copy of that position.
     _idleSave?.cancel();
     _idleSave = null;
@@ -8574,6 +8697,112 @@ class _ReaderPageState extends State<ReaderPage>
     });
   }
 
+  Future<bool> _resolveReadingDetour({required bool restore}) async {
+    if (_jumpDecisionOpen) return false;
+    _savePosition(notify: false, finalSave: true);
+    _jumpDecisionOpen = true;
+    try {
+      final origin = widget.state.positionFor(widget.novel.id)?.returnPoint;
+      final originalChapter = origin == null
+          ? null
+          : widget.state.chapterForPosition(_sourceBook, origin);
+      if (restore && originalChapter == null) {
+        throw const FormatException('原阅读点已无法定位');
+      }
+      final prepared = restore && originalChapter != _chapter
+          ? await _prepareDisplayContent(originalChapter!)
+          : null;
+      if (!mounted) return false;
+      final target = await widget.state.resolveReadingJump(
+        _sourceBook,
+        restore: restore,
+      );
+      if (!mounted) return false;
+      if (restore && target != null) {
+        final chapter = widget.state.chapterForPosition(_sourceBook, target);
+        if (chapter == null) return false;
+        _returningToChapter = chapter;
+        _go(chapter, position: target, prepared: prepared);
+      }
+      return true;
+    } catch (_) {
+      if (mounted) showNovelFeedback(context, '阅读点未能保存，已保留原阅读点，请重试');
+      return false;
+    } finally {
+      _jumpDecisionOpen = false;
+    }
+  }
+
+  Future<bool> _confirmReadingDetour() async {
+    if (widget.state.positionFor(widget.novel.id)?.returnPoint == null) {
+      return true;
+    }
+    if (_jumpDecisionOpen) return false;
+    _savePosition(notify: false, finalSave: true);
+    if (!widget.state.shouldRemindReadingJump(
+      _sourceBook,
+      position: _currentPosition(),
+    )) {
+      return true;
+    }
+    _jumpDecisionOpen = true;
+    final origin = widget.state.positionFor(widget.novel.id)!.returnPoint!;
+    final originChapter = widget.state.chapterForPosition(_sourceBook, origin);
+    final originLabel = originChapter == null
+        ? '原章节暂不可用'
+        : '${_sourceBook.readingTitleFor(originChapter)} · 全书 ${((originChapter + origin.fraction) / _sourceBook.chapters.length * 100).toStringAsFixed(1)}%';
+    String? answer;
+    try {
+      answer = await showJellySheet<String>(
+        context: context,
+        reduceMotion: widget.state.reduceMotion,
+        surfaceWrapper: _readerSurface,
+        builder: (sheet) => SingleChildScrollView(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const AppText(
+                  '保留哪一个阅读点？',
+                  style: TextStyle(fontSize: 21, fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 12),
+                const AppText('当前阅读位置与之前跨度较大，已为你保留原阅读点。'),
+                const SizedBox(height: 8),
+                AppText('原阅读点：$originLabel'),
+                AppText(
+                  '${widget.state.readingJumpReminderScope == ReadingJumpReminderScope.chapter ? '章内' : '全书'}跨度提醒线：${widget.state.readingJumpReminderPercent}%${widget.state.readingJumpReminderScope == ReadingJumpReminderScope.chapter ? '（跨章直接提醒）' : '（按章节加权）'}',
+                ),
+                const SizedBox(height: 20),
+                GlassTextButton(
+                  key: const ValueKey('reader-detour-restore'),
+                  onPressed: () => Navigator.pop(sheet, 'restore'),
+                  child: const AppText('回到原阅读点'),
+                ),
+                GlassTextButton(
+                  key: const ValueKey('reader-detour-keep'),
+                  onPressed: () => Navigator.pop(sheet, 'keep'),
+                  child: const AppText('保留新进度并退出'),
+                ),
+                GlassTextButton(
+                  onPressed: () => Navigator.pop(sheet),
+                  child: const AppText('继续阅读，暂不决定'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    } finally {
+      _jumpDecisionOpen = false;
+    }
+    if (!mounted || answer == null) return false;
+    final resolved = await _resolveReadingDetour(restore: answer == 'restore');
+    return resolved && answer == 'keep';
+  }
+
   Future<void> _requestExit() async {
     if (_allowExit) return;
     if (_toolsOpen || _catalogueOpen || _findOpen) {
@@ -8583,6 +8812,12 @@ class _ReaderPageState extends State<ReaderPage>
     if (_selection.value) {
       _selection.clear();
       _cancelExitRequest();
+      return;
+    }
+    if (widget.state.positionFor(widget.novel.id)?.returnPoint != null) {
+      if (await _confirmReadingDetour() && mounted) {
+        await _exitReader();
+      }
       return;
     }
     final now = DateTime.now();
@@ -8598,6 +8833,7 @@ class _ReaderPageState extends State<ReaderPage>
 
   Future<void> _exitReader() async {
     if (_showingMoment || _allowExit) return;
+    if (!await _confirmReadingDetour() || !mounted) return;
     await _presentReadingMoment();
     if (!mounted) return;
     setState(() => _allowExit = true);
@@ -8618,6 +8854,8 @@ class _ReaderPageState extends State<ReaderPage>
     _cancelExitRequest();
     _stopAutoScroll();
     _savePosition(notify: false, finalSave: true);
+    final origin =
+        _currentPosition() ?? widget.state.positionFor(widget.novel.id);
     _detailsOpen = true;
     Object? chapter;
     try {
@@ -8662,10 +8900,32 @@ class _ReaderPageState extends State<ReaderPage>
       }
       setState(() => _readerBook = current);
     }
-    if (mounted && chapter is BookReadingTarget) {
-      _openBookTarget(chapter);
-    } else if (mounted && chapter is int && chapter != _chapter) {
-      _go(chapter);
+    if (mounted &&
+        (chapter is BookReadingTarget ||
+            chapter is int && chapter != _chapter)) {
+      if (origin == null) return;
+      _jumpDecisionOpen = true;
+      try {
+        final targetChapter = chapter is int
+            ? chapter
+            : _sourceBook.chapters.indexWhere(
+                (c) => c.id == (chapter as BookReadingTarget).chapterId,
+              );
+        await widget.state.beginReadingJump(
+          _sourceBook,
+          origin,
+          targetProgress: targetChapter < 0
+              ? null
+              : targetChapter / _sourceBook.chapters.length,
+        );
+        if (!mounted) return;
+        if (chapter is BookReadingTarget) _openBookTarget(chapter);
+        if (chapter is int) _go(chapter);
+      } catch (_) {
+        if (mounted) showNovelFeedback(context, '原阅读点未能保存，已取消跳转，请重试');
+      } finally {
+        _jumpDecisionOpen = false;
+      }
     }
   }
 
@@ -8835,7 +9095,41 @@ class _ReaderPageState extends State<ReaderPage>
     ),
   );
 
+  double get _currentSeekFraction => _paginated
+      ? _paged.fraction
+      : (_scroll.hasClients ? _scrollSourceFraction(_scroll.offset) : null) ??
+            _currentPosition()?.fraction ??
+            0;
+
+  void _captureProgressOrigin() {
+    _chromeProgressOrigin ??=
+        _currentPosition() ?? widget.state.positionFor(widget.novel.id);
+    _chromeProgressOriginFraction ??= _currentSeekFraction;
+  }
+
+  Future<bool> _retainProgressOrigin(
+    ReadingPosition? origin, {
+    required double targetProgress,
+  }) async {
+    if (origin == null || _jumpDecisionOpen) return false;
+    _jumpDecisionOpen = true;
+    try {
+      await widget.state.beginReadingJump(
+        _sourceBook,
+        origin,
+        targetProgress: targetProgress,
+      );
+      return mounted;
+    } catch (_) {
+      if (mounted) showNovelFeedback(context, '原阅读点未能保存，已取消进度调整，请重试');
+      return false;
+    } finally {
+      _jumpDecisionOpen = false;
+    }
+  }
+
   void _previewChromeProgress(double value) {
+    _captureProgressOrigin();
     _pageAdvanceOrigin = null;
     _scrollAdvanceOrigin = null;
     _verifiedReading.resetPending();
@@ -8866,16 +9160,59 @@ class _ReaderPageState extends State<ReaderPage>
     }
     _chromeProgressFrame = null;
     _chromeProgressPending = null;
+    _chromeProgressOrigin = null;
+    _chromeProgressOriginFraction = null;
   }
 
-  void _commitChromeProgress(double value) {
+  void _invalidateChapterScrubReturn() {
+    if (_chapterScrubReturnPosition != null) {
+      setState(() => _chapterScrubReturnPosition = null);
+    }
+  }
+
+  void _restoreChapterScrubPosition() {
+    final point = _chapterScrubReturnPosition;
+    if (point == null ||
+        _jumpDecisionOpen ||
+        _chromeProgressActive ||
+        _restoring ||
+        widget.state.chapterForPosition(_sourceBook, point) != _chapter) {
+      return;
+    }
+    _idleSave?.cancel();
     _cancelChromeProgress();
-    if (mounted) {
-      if (_paginated) {
-        unawaited(_seekProgress(value));
-      } else {
-        unawaited(_seekChromeSourceProgress(value, persist: true));
-      }
+    _chapterScrubReturnPosition = null;
+    _go(_chapter, position: point);
+  }
+
+  Future<void> _commitChromeProgress(double value) async {
+    final origin =
+        _chromeProgressOrigin ??
+        _currentPosition() ??
+        widget.state.positionFor(widget.novel.id);
+    final from = _chromeProgressOriginFraction ?? _currentSeekFraction;
+    final generation = _contentGeneration;
+    _cancelChromeProgress();
+    _idleSave?.cancel();
+    final retained =
+        (value - from).abs() < 1e-9 ||
+        await _retainProgressOrigin(
+          origin,
+          targetProgress:
+              (_chapter + value.clamp(0.0, 1.0)) / _sourceBook.chapters.length,
+        );
+    if (!mounted || generation != _contentGeneration) return;
+    if (!retained) {
+      if (origin != null) _go(_chapter, position: origin);
+      return;
+    }
+    if ((value - from).abs() >= 1e-9 && origin != null) {
+      setState(() => _chapterScrubReturnPosition ??= origin);
+    }
+    if (_paginated) {
+      await _seekProgress(value);
+    } else {
+      await _seekChromeSourceProgress(value, persist: true);
     }
   }
 
@@ -9176,6 +9513,11 @@ class _ReaderPageState extends State<ReaderPage>
                           progressFraction: sourceFraction,
                           onFind: _findInChapter,
                           onSeek: _commitChromeProgress,
+                          onRestoreProgress:
+                              _chapterScrubReturnPosition == null ||
+                                  _chromeProgressActive
+                              ? null
+                              : _restoreChapterScrubPosition,
                           onPrevious: _chapter > 0
                               ? () => _go(_chapter - 1)
                               : null,
@@ -9194,6 +9536,7 @@ class _ReaderPageState extends State<ReaderPage>
                           },
                           onPreviewChanged: (active) {
                             if (generation != _contentGeneration) return;
+                            if (active) _captureProgressOrigin();
                             _chromeProgressActive = active;
                             _typographyPreviewing = active;
                             if (active) {
@@ -9770,6 +10113,11 @@ class _ReaderPageState extends State<ReaderPage>
             _restoring = false;
             _revealChapter();
           }
+        } else if (notification is ScrollUpdateNotification &&
+            notification.dragDetails != null &&
+            _scrollAdvanceOrigin != null &&
+            (notification.metrics.pixels - _scrollAdvanceOrigin!).abs() > .5) {
+          _invalidateChapterScrubReturn();
         } else if (notification is OverscrollNotification &&
             notification.dragDetails != null) {
           final delta = notification.overscroll;
@@ -10280,8 +10628,27 @@ class _ReaderPageState extends State<ReaderPage>
       case ReaderEnterFocus():
         _showChrome(false);
       case ReaderSeekProgress(:final fraction):
-        await _seekProgress(fraction);
+        final origin =
+            _currentPosition() ?? widget.state.positionFor(widget.novel.id);
+        if (await _retainProgressOrigin(
+              origin,
+              targetProgress:
+                  (_chapter + fraction) / _sourceBook.chapters.length,
+            ) &&
+            mounted) {
+          await _seekProgress(fraction);
+        }
       case ReaderSeekBookProgress(:final chapter, :final fraction):
+        final origin =
+            _currentPosition() ?? widget.state.positionFor(widget.novel.id);
+        if (!await _retainProgressOrigin(
+              origin,
+              targetProgress:
+                  (chapter + fraction) / _sourceBook.chapters.length,
+            ) ||
+            !mounted) {
+          return;
+        }
         if (chapter == _chapter) {
           await _seekProgress(fraction);
         } else {

@@ -10,6 +10,7 @@ import 'local_library_preferences.dart';
 import 'local_series_editor.dart';
 import 'local_book_removal.dart';
 import 'book_documents.dart';
+import 'book_categories.dart';
 import 'local_text_recovery.dart';
 import 'local_book_edit_widgets.dart';
 import 'local_book_tags_editor.dart';
@@ -155,28 +156,22 @@ class _LocalBookEditorState extends State<LocalBookEditor> {
   }
 
   Future<void> _chooseGroup() async {
-    final groups = _groups!;
-    final value = await showJellySheet<String>(
-      context: context,
+    final value = await chooseBookCategory(
+      context,
+      _groups!,
+      bookId: widget.book.id,
+      selected: _group,
       reduceMotion: widget.library.reduceMotion,
-      heightFactor: .6,
-      builder: (sheet) => ListView(
-        padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
-        children: [
-          const ArchiveSection(title: '选择分类', code: 'LOCAL / CATEGORY'),
-          const SizedBox(height: 16),
-          for (final e in {
-            LocalLibraryPreferences.unfiled: '未分类',
-            ...groups.groups,
-          }.entries)
-            GlassTextButton(
-              onPressed: () => Navigator.pop(sheet, e.key),
-              child: AppText(e.value),
-            ),
-        ],
-      ),
     );
-    if (mounted && value != null) setState(() => _group = value);
+    if (mounted) {
+      setState(() {
+        if (value != null) _group = value;
+        if (_group != LocalLibraryPreferences.unfiled &&
+            !_groups!.groups.containsKey(_group)) {
+          _group = LocalLibraryPreferences.unfiled;
+        }
+      });
+    }
   }
 
   Future<void> _save() async {

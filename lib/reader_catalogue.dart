@@ -10,6 +10,8 @@ import 'offline_cache.dart';
 import 'library_state.dart' show ReadingPosition;
 import 'library_reflow.dart';
 
+enum ReaderCatalogueAction { returnToReadingPoint }
+
 /// A bounded, lazy chapter picker using the existing glass drawer. The current
 /// chapter is the scroll origin, so locating it never lays out earlier rows.
 class ReaderCatalogue extends StatefulWidget {
@@ -19,6 +21,7 @@ class ReaderCatalogue extends StatefulWidget {
     required this.currentChapter,
     this.cache,
     this.position,
+    this.returnPoint,
     this.onProgressPreview,
     this.onProgressCommitted,
     this.onPreviewChanged,
@@ -30,7 +33,7 @@ class ReaderCatalogue extends StatefulWidget {
   final Novel novel;
   final int currentChapter;
   final OfflineCacheStore? cache;
-  final ReadingPosition? position;
+  final ReadingPosition? position, returnPoint;
   final ValueChanged<double>? onProgressPreview, onProgressCommitted;
   final ValueChanged<bool>? onPreviewChanged;
   final bool canHandoff;
@@ -64,6 +67,40 @@ class _ReaderCatalogueState extends State<ReaderCatalogue>
     paragraph: widget.position?.paragraphIndex ?? 0,
     offset: widget.position?.textOffset ?? 0,
   );
+  late final int? _returnIndex = _savedDirectoryIndex();
+
+  int? _savedDirectoryIndex() {
+    final point = widget.returnPoint;
+    if (point == null) return null;
+    final chapter = point.chapterId > 0
+        ? widget.novel.chapters.indexWhere((c) => c.id == point.chapterId)
+        : point.chapter;
+    if (chapter < 0 || chapter >= widget.novel.chapters.length) return null;
+    return widget.novel.directoryIndexFor(
+      chapter,
+      paragraph: point.paragraphIndex ?? 0,
+      offset: point.textOffset ?? 0,
+    );
+  }
+
+  int? _focusedIndex;
+
+  void _locateReadingPoint() {
+    final target = _returnIndex ?? _current;
+    FocusScope.of(context).unfocus();
+    _search.clear();
+    setState(() {
+      _matches = _filter('');
+      _focusedIndex = target;
+      for (final volume in _volumes) {
+        if (target >= volume.start && target < volume.end) {
+          _expanded.add(volume.key);
+        }
+      }
+    });
+    _resetScrollAfterFrame();
+  }
+
   late final _volumes = NovelVolume.of(_directoryChapters);
   late final Set<String> _expanded = {
     for (final volume in _volumes)
@@ -223,6 +260,29 @@ class _ReaderCatalogueState extends State<ReaderCatalogue>
         ),
         const SizedBox(height: 10),
         Expanded(child: _chapters(context)),
+        Row(
+          children: [
+            if (_returnIndex != null)
+              Expanded(
+                child: GlassTextButton(
+                  key: const ValueKey('reader-return-point'),
+                  onPressed: () => Navigator.pop(
+                    context,
+                    ReaderCatalogueAction.returnToReadingPoint,
+                  ),
+                  child: const AppText('回到原阅读点'),
+                ),
+              )
+            else
+              const Spacer(),
+            GlassIconButton(
+              key: const ValueKey('reader-locate-reading-point'),
+              icon: CupertinoIcons.location,
+              label: _returnIndex == null ? '定位当前阅读' : '定位跳转前阅读点',
+              onPressed: _locateReadingPoint,
+            ),
+          ],
+        ),
       ],
     ),
   );
@@ -258,7 +318,9 @@ class _ReaderCatalogueState extends State<ReaderCatalogue>
           ? _volumeRow(context, rows[index].volume!)
           : _row(context, rows[index].chapter!),
     );
-    final current = rows.indexWhere((row) => row.chapter == _current);
+    final current = rows.indexWhere(
+      (row) => row.chapter == (_focusedIndex ?? _current),
+    );
     final origin = current < 0 ? 0 : current;
     return LibraryReflowScope(
       controller: _rowReflow,
@@ -397,6 +459,8 @@ class _ReaderCatalogueState extends State<ReaderCatalogue>
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
+                  if (index == _returnIndex)
+                    const AppText('跳转前阅读点', style: TextStyle(fontSize: 10)),
                   if (current)
                     const AppText('正在阅读', style: TextStyle(fontSize: 10)),
                   if (widget.cache case final OfflineCacheStore cache)

@@ -1,4 +1,8 @@
 import 'dart:convert';
+import 'dart:async';
+import 'package:wenku8_flutter/pages.dart';
+import 'package:wenku8_flutter/offline_repository.dart';
+import 'package:wenku8_flutter/offline_cache.dart';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -6,6 +10,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:wenku8_flutter/library_state.dart';
+import 'package:wenku8_flutter/local_library_preferences.dart';
 import 'package:wenku8_flutter/local_book_editor.dart';
 import 'package:wenku8_flutter/app_ui.dart';
 import 'package:wenku8_flutter/book_dynamic_categories.dart';
@@ -13,6 +18,19 @@ import 'package:wenku8_flutter/catalog.dart';
 import 'package:wenku8_flutter/local_books.dart';
 import 'package:wenku8_flutter/local_import_batch.dart';
 import 'package:wenku8_flutter/reading_history.dart';
+
+class _SlowLocalDetail extends OfflineNovelRepository {
+  _SlowLocalDetail({required super.cache, required super.local});
+  final loaded = Completer<Novel>();
+  int chapterRequests = 0;
+  @override
+  Future<Novel> detail(Novel novel) => loaded.future;
+  @override
+  Future<List<NovelChapter>> chapters(int id) {
+    chapterRequests++;
+    return super.chapters(id);
+  }
+}
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -44,6 +62,184 @@ void main() {
         seriesName: seriesName,
         isOmnibus: omnibus,
       );
+
+  testWidgets('detail thumbnail releases the old transition cover', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    final library = LibraryState(await SharedPreferences.getInstance());
+    addTearDown(library.dispose);
+    final repository = _SlowLocalDetail(
+      cache: OfflineCacheStore(root),
+      local: store,
+    );
+    const old = Novel(
+      id: 100,
+      title: '封面同步',
+      author: '作者',
+      genre: '',
+      summary: '',
+      colors: [Colors.brown, Colors.grey],
+      coverUrl: 'assets/report/season-spring.png',
+    );
+    const current = Novel(
+      id: 100,
+      title: '封面同步',
+      author: '作者',
+      genre: '',
+      summary: '',
+      colors: [Colors.brown, Colors.grey],
+      coverUrl: 'assets/report/season-autumn.png',
+    );
+    Widget page(Novel novel) => MaterialApp(
+      home: DetailPage(
+        novel: novel,
+        transitionNovel: old,
+        state: library,
+        repository: repository,
+      ),
+    );
+    await tester.pumpWidget(page(old));
+    await tester.pumpAndSettle();
+    await tester.pumpWidget(page(current));
+    await tester.pumpAndSettle();
+    final covers = tester.widgetList<NovelCover>(find.byType(NovelCover));
+    expect(covers, isNotEmpty);
+    expect(
+      covers.every((cover) => cover.novel.coverUrl == current.coverUrl),
+      isTrue,
+    );
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  test(
+    'omnibus cover follows confirmed stable chapters and preserves originals',
+    () async {
+      SharedPreferences.setMockInitialValues({});
+      final library = LibraryState(await SharedPreferences.getInstance());
+      addTearDown(library.dispose);
+      final second = await store.import(
+        LocalBookInput(
+          '星空旅人 第2卷.txt',
+          Uint8List.fromList(utf8.encode('第一章 第二卷\n正文。')),
+        ),
+      );
+      await store.setCover(first.id, 'assets/report/season-spring.png');
+      await store.setCover(second.id, 'assets/report/season-autumn.png');
+      final firstCover = store.book(first.id)!.coverUrl;
+      final secondCover = store.book(second.id)!.coverUrl;
+      final before = (await store.original(first.id)).bytes;
+      final combined = await store.saveSeries(
+        title: '封面切换样本',
+        volumes: [
+          (bookId: first.id, title: '第一卷'),
+          (bookId: second.id, title: '第二卷'),
+        ],
+      );
+      store.readingCoverChapterId = (id) {
+        final current = library.positionFor(id);
+        final snapshot = store.seriesSnapshot(id);
+        final confirmed =
+            snapshot != null && library.shouldRemindReadingJump(snapshot)
+            ? current?.returnPoint
+            : current;
+        return confirmed?.chapterId;
+      };
+      Future<void> save(int chapter) => library.savePosition(
+        novel: combined,
+        chapter: chapter,
+        offset: .5,
+        maximum: 1,
+        width: 390,
+      );
+      await save(0);
+      expect(store.books.single.coverUrl, firstCover);
+      await save(1);
+      expect(store.book(combined.id)!.coverUrl, secondCover);
+      expect(store.books.single.coverUrl, secondCover);
+      await library.beginReadingJump(
+        combined,
+        library.positionFor(combined.id)!,
+      );
+      await save(0);
+      expect(store.books.single.coverUrl, secondCover);
+      await library.setReadingJumpReminderPercent(100);
+      expect(store.books.single.coverUrl, firstCover);
+      await library.setReadingJumpReminderPercent(5);
+      expect(store.books.single.coverUrl, secondCover);
+      await library.resolveReadingJump(combined, restore: true);
+      expect(store.books.single.coverUrl, secondCover);
+      await library.beginReadingJump(
+        combined,
+        library.positionFor(combined.id)!,
+      );
+      await save(0);
+      await library.resolveReadingJump(combined, restore: false);
+      expect(store.books.single.coverUrl, firstCover);
+      await store.saveSeries(
+        id: combined.id,
+        title: combined.title,
+        volumes: [
+          (bookId: second.id, title: '第二卷'),
+          (bookId: first.id, title: '第一卷'),
+        ],
+      );
+      expect(store.books.single.coverUrl, firstCover);
+      await store.load();
+      expect(store.book(combined.id)!.coverUrl, firstCover);
+      await store.setVolumeCover(combined.id, second.id);
+      final fallbackRecords = await File(
+        '${store.directory.path}/covers.json',
+      ).readAsString();
+      expect(store.hasCustomCover(combined.id), isTrue);
+      expect(store.book(combined.id)!.coverUrl, firstCover);
+      await save(1);
+      expect(store.book(combined.id)!.coverUrl, secondCover);
+      expect(store.books.single.coverUrl, secondCover);
+      expect(
+        await File('${store.directory.path}/covers.json').readAsString(),
+        fallbackRecords,
+      );
+      await store.restoreCover(combined.id);
+      expect(store.book(combined.id)!.coverUrl, secondCover);
+      expect((await store.original(first.id)).bytes, before);
+    },
+  );
+
+  testWidgets('local details render immediately while navigation is prepared', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    final library = LibraryState(await SharedPreferences.getInstance());
+    addTearDown(library.dispose);
+    final cache = OfflineCacheStore(Directory('${root.path}/cache'));
+    final repository = _SlowLocalDetail(cache: cache, local: store);
+    addTearDown(repository.dispose);
+    addTearDown(cache.dispose);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: DetailLoaderPage(
+          novel: first,
+          state: library,
+          repository: repository,
+        ),
+      ),
+    );
+    await tester.pump();
+    expect(
+      tester.widget<DetailPage>(find.byType(DetailPage)).isLoading,
+      isFalse,
+    );
+    expect(find.byKey(const ValueKey('detail-meta-skeleton')), findsNothing);
+    expect(repository.loaded.isCompleted, isFalse);
+    repository.loaded.complete(first);
+    await tester.pumpAndSettle();
+    expect(repository.chapterRequests, 0);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpAndSettle();
+  });
 
   for (final brightness in Brightness.values) {
     testWidgets(
@@ -335,6 +531,59 @@ void main() {
       await tester.tap(toggle);
       await tester.pump();
       expect(tester.widget<SwitchListTile>(toggle).value, isTrue);
+      final category = find.byKey(const ValueKey('local-edit-category'));
+      await tester.ensureVisible(category);
+      await tester.pumpAndSettle();
+      await tester.tap(category);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('category-create')));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey('category-name')),
+        '配置中新建',
+      );
+      await tester.tap(find.byKey(const ValueKey('category-save')));
+      await tester.pumpAndSettle();
+      expect(library.organization.groups.values, contains('配置中新建'));
+      expect(
+        find.byKey(const ValueKey('custom-category-list')),
+        findsOneWidget,
+      );
+      final id = library.organization.groups.entries
+          .singleWhere((e) => e.value == '配置中新建')
+          .key;
+      await tester.tap(find.byKey(ValueKey('category-select-$id')));
+      await tester.pumpAndSettle();
+      expect(
+        find.descendant(of: category, matching: find.text('配置中新建')),
+        findsOneWidget,
+      );
+      expect(
+        library.organization.groupOf(first.id),
+        LocalLibraryPreferences.unfiled,
+      );
+      await tester.tap(category);
+      await tester.pumpAndSettle();
+      await tester.drag(
+        find.byKey(ValueKey('custom-category-$id')),
+        const Offset(-220, 0),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(ValueKey('category-delete-$id')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('删除分类'));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('custom-category-list')),
+        findsOneWidget,
+      );
+      expect(library.organization.groups.containsKey(id), isFalse);
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(
+        find.descendant(of: category, matching: find.text('未分类')),
+        findsOneWidget,
+      );
       expect(tester.takeException(), isNull);
     },
   );
