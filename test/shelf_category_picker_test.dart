@@ -82,6 +82,19 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  testWidgets('custom categories keep original button style and stable IDs', (
+    tester,
+  ) async {
+    await open(tester);
+    final custom = find.byKey(const ValueKey('shelf-custom-category-manual'));
+    await tester.ensureVisible(custom);
+    expect(find.text('我的自定义分类'), findsOneWidget);
+    await tester.tap(custom);
+    await tester.pumpAndSettle();
+    expect(results, ['manual']);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets(
     'primary menu has exactly four families and opens details on right',
     (tester) async {
@@ -103,7 +116,10 @@ void main() {
         find.descendant(of: primary, matching: find.text('按标签分类')),
         findsOneWidget,
       );
-      expect(find.text('我的自定义分类'), findsNothing);
+      expect(
+        find.byKey(const ValueKey('shelf-custom-category-manual')),
+        findsOneWidget,
+      );
       expect(find.byType(CupertinoPicker), findsNothing);
 
       await tester.tap(

@@ -11,6 +11,79 @@ _Art _foldDrawing(
   final p = gesture.lead, q = gesture.follow, r = gesture.trail;
   final active = pose.active.clamp(0.0, 1.0), v = pose.variant;
   switch (pose.symbol) {
+    case ArchiveSymbol.randomRead:
+      void book(_Trace s) => s
+          .m(3.35, 7.5)
+          .q(7.55, 5.78, 12, 8.18)
+          .q(16.35, 5.72 + .7 * p, 20.65, 7.45 + .3 * p)
+          .l(20.65, 19.42)
+          .q(16.18, 17.88, 12, 20.42)
+          .q(7.82, 17.88, 3.35, 19.42)
+          .z();
+      a.path(book, fill: true, opacity: .065 + active * .075);
+      a.path(book);
+      a.line(12, 8.18, 12, 20.42, opacity: .82);
+      a.path(
+        (s) => s
+            .m(5.75, 10.65)
+            .q(8.28, 9.82, 10.05, 10.92)
+            .m(5.75, 13.34)
+            .q(8.3, 12.62, 10.05, 13.55)
+            .m(13.95, 10.92)
+            .q(15.72, 9.82, 18.25, 10.65)
+            .m(13.95, 13.55)
+            .q(15.7, 12.62, 18.25, 13.34),
+        opacity: .68,
+        width: 1.42 / 1.72,
+      );
+      a.path(
+        (s) => s
+            .m(6.1, 16.45)
+            .q(8.25, 15.92, 10.05, 16.68)
+            .m(13.95, 16.68)
+            .q(15.75, 15.92, 17.9, 16.45),
+        opacity: .5,
+        width: 1.32 / 1.72,
+      );
+      a.transform(
+        x: 19.15 - 8 * q,
+        y: 4.95 - .9 * q,
+        angle: -.12 * r,
+        scale: 1 + .12 * p,
+        pivot: Offset.zero,
+        draw: () {
+          void star(_Trace s) => s
+              .m(0, -2.35)
+              .q(.43, -.48, 2.3, 0)
+              .q(.43, .46, 0, 2.35)
+              .q(-.43, .46, -2.3, 0)
+              .q(-.43, -.48, 0, -2.35)
+              .z();
+          a.path(star, fill: true, opacity: .76 * active + .6 * q);
+          a.path(star, width: 1.28 / 1.72, opacity: .68 + .32 * active);
+        },
+      );
+    case ArchiveSymbol.recentRead:
+      a.poly([4.2, 3.3, 12.8, 3.3, 16.4, 6.9, 16.4, 9.7]);
+      a.poly([4.2, 3.3, 4.2, 20.5, 10.2, 20.5]);
+      a.poly([12.8, 3.3, 12.8, 6.9, 16.4, 6.9]);
+      a.line(7.1, 9.5, 11.7, 9.5);
+      a.line(7.1, 12.6, 9.4, 12.6);
+      a.poly(
+        [6.8, 3.6, 6.8, 6.4, 8.3, 5.5, 9.8, 6.4, 9.8, 3.6],
+        fill: true,
+        close: true,
+        opacity: .2 + .55 * active,
+      );
+      a.circle(16.3, 15.4, 4.7);
+      a.poly([
+        16.3 + 2.1 * math.sin(-.65 * p),
+        15.4 - 2.1 * math.cos(-.65 * p),
+        16.3,
+        15.4,
+        18.2,
+        16.5,
+      ]);
     case ArchiveSymbol.discover:
       a.card(3.6, 3.1, 16.8, 17.8, fold: 3.6, shade: .09 + active * .10);
       a.rotate(p * .80, () {

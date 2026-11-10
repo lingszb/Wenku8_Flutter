@@ -60,35 +60,28 @@ class BookGridTile extends StatelessWidget {
     ),
   );
 
-  Widget _metadata(BuildContext context, {double? height}) => SizedBox(
-    key: ValueKey('grid-metadata-${book.id}'),
-    height: height,
-    child: Row(
-      children: [
-        Expanded(
-          child: JellyTapSurface(
-            onTap: onTap,
-            child: SizedBox(
-              height: height,
+  Widget _metadata(BuildContext context, {BookGridGeometry? geometry}) {
+    final viewport = geometry?.viewport;
+    final lineHeight = viewport?.authorHeight;
+    final reserveSeries = viewport?.showSeries ?? seriesLabel != null;
+    return ConstrainedBox(
+      key: ValueKey('grid-metadata-${book.id}'),
+      constraints: BoxConstraints(minHeight: viewport?.footerHeight ?? 0),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: JellyTapSurface(
+              onTap: onTap,
               child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  AppText(
-                    LocalLibraryPreferences.authorName(book.author),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 12,
-                      height: 1.4,
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                  if (seriesLabel != null) ...[
-                    const SizedBox(height: 4),
-                    AppText(
-                      seriesLabel!,
+                  SizedBox(
+                    key: ValueKey('grid-author-slot-${book.id}'),
+                    height: lineHeight,
+                    child: AppText(
+                      LocalLibraryPreferences.authorName(book.author),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
@@ -97,29 +90,55 @@ class BookGridTile extends StatelessWidget {
                         color: Theme.of(context).colorScheme.onSurfaceVariant,
                       ),
                     ),
+                  ),
+                  if (reserveSeries) ...[
+                    const SizedBox(height: 4),
+                    SizedBox(
+                      key: ValueKey('grid-series-slot-${book.id}'),
+                      height: lineHeight,
+                      child: seriesLabel == null
+                          ? null
+                          : AppText(
+                              seriesLabel!,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 12,
+                                height: 1.4,
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                    ),
                   ],
                   if (progress != null) ...[
                     const SizedBox(height: 4),
-                    BookReadingProgress(label: progress!, value: progressValue),
+                    BookReadingProgress(
+                      label: progress!,
+                      value: progressValue,
+                      labelHeight: viewport?.progressHeight,
+                    ),
                   ],
                 ],
               ),
             ),
           ),
-        ),
-        // This sibling is never inside the cover's open-book gesture target.
-        trailing,
-      ],
-    ),
-  );
+          trailing,
+        ],
+      ),
+    );
+  }
 
   Widget _tile(
     BuildContext context, {
     required double coverWidth,
     required double coverHeight,
     BookGridGeometry? geometry,
-  }) => SizedBox(
-    height: geometry?.rowHeight,
+  }) => ConstrainedBox(
+    constraints: BoxConstraints(
+      minHeight: geometry?.fixed == true ? geometry!.rowHeight : 0,
+    ),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: MainAxisSize.min,
@@ -134,6 +153,7 @@ class BookGridTile extends StatelessWidget {
               _cover(coverWidth, coverHeight),
               const SizedBox(height: 10),
               SizedBox(
+                key: ValueKey('grid-title-slot-${book.id}'),
                 height: geometry?.viewport.titleHeight,
                 child: AppText(
                   book.title,
@@ -150,7 +170,7 @@ class BookGridTile extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 4),
-        _metadata(context, height: geometry?.viewport.footerHeight),
+        _metadata(context, geometry: geometry),
       ],
     ),
   );
@@ -172,6 +192,7 @@ class BookGridTile extends StatelessWidget {
         coverWidth: constraints.maxWidth,
         coverHeight:
             constraints.maxWidth / BookCollectionLayout.gridCoverAspectRatio,
+        geometry: geometry,
       ),
     );
   }
@@ -225,8 +246,10 @@ class BookGridFailure extends StatelessWidget {
     required double coverWidth,
     required double coverHeight,
     BookGridGeometry? geometry,
-  }) => SizedBox(
-    height: geometry?.rowHeight,
+  }) => ConstrainedBox(
+    constraints: BoxConstraints(
+      minHeight: geometry?.fixed == true ? geometry!.rowHeight : 0,
+    ),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: MainAxisSize.min,
@@ -275,22 +298,31 @@ class BookGridFailure extends StatelessWidget {
 
 /// Shared label and optional determinate bar for local list and grid metadata.
 class BookReadingProgress extends StatelessWidget {
-  const BookReadingProgress({super.key, required this.label, this.value});
+  const BookReadingProgress({
+    super.key,
+    required this.label,
+    this.value,
+    this.labelHeight,
+  });
   final String label;
   final double? value;
+  final double? labelHeight;
   @override
   Widget build(BuildContext context) => Column(
     mainAxisSize: MainAxisSize.min,
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
-      AppText(
-        label,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: TextStyle(
-          fontSize: 12,
-          height: 1.4,
-          color: Theme.of(context).colorScheme.primary,
+      SizedBox(
+        height: labelHeight,
+        child: AppText(
+          label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            fontSize: 12,
+            height: 1.4,
+            color: Theme.of(context).colorScheme.primary,
+          ),
         ),
       ),
       if (value != null) ...[

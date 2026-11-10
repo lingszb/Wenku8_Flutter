@@ -605,6 +605,7 @@ class LibraryState extends ChangeNotifier {
         _prefs.get('directReading') == true && _directReadingPages.isNotEmpty;
     _openRecentOnLaunch = _prefs.get('openRecentOnLaunch') == true;
     _startPage = AppStartPage.parseOrDefault(_prefs.get('startPage'));
+    _homeTabOrder = AppStartPage.orderedTabs(_prefs.get('homeTabOrder'));
     _combinedShelf = _prefs.get('combinedShelf') == true;
     _blockedTags = BlockedTags.fromRecord(
       _prefs.get(BlockedTags.preferenceKey),
@@ -834,6 +835,7 @@ class LibraryState extends ChangeNotifier {
   bool _directReadingEnabled = false;
   bool _openRecentOnLaunch = false;
   AppStartPage _startPage = AppStartPage.discovery;
+  List<AppStartPage> _homeTabOrder = AppStartPage.homeTabs;
   bool _combinedShelf = false;
   ReaderPreferences _readerPreferences = const ReaderPreferences();
   final _bookReaderStyles = <int, ReaderBookStyle>{};
@@ -1013,6 +1015,7 @@ class LibraryState extends ChangeNotifier {
   bool get directReading => _directReadingEnabled;
   bool get openRecentOnLaunch => _openRecentOnLaunch;
   AppStartPage get startPage => _startPage;
+  List<AppStartPage> get homeTabOrder => List.unmodifiable(_homeTabOrder);
   Set<ReadingEntry> get directReadingPages =>
       Set.unmodifiable(_directReadingPages);
   bool directReadingOn(ReadingEntry page) =>
@@ -1518,6 +1521,30 @@ class LibraryState extends ChangeNotifier {
       await writeLibraryPreference(_prefs, 'startPage', value.name);
       _startPage = value;
       if (!_disposed) _settings.notifyListeners();
+    });
+  }
+
+  Future<void> setHomeTabOrder(List<AppStartPage> value) async {
+    if (value.length != 3 ||
+        value.toSet().length != 3 ||
+        !value.every(AppStartPage.homeTabs.contains)) {
+      throw const FormatException('导航顺序须包含书架、本地和我的，且不能重复');
+    }
+    final next = List<AppStartPage>.unmodifiable(value);
+    if (_restoreBarrier case final barrier?) {
+      return barrier.future.then((_) => setHomeTabOrder(next));
+    }
+    await _queuePositionWrite(() async {
+      await writeLibraryPreference(
+        _prefs,
+        'homeTabOrder',
+        next.map((page) => page.name).toList(),
+      );
+      _homeTabOrder = next;
+      if (!_disposed) {
+        _navigationChanges.notifyListeners();
+        _settings.notifyListeners();
+      }
     });
   }
 
@@ -3685,6 +3712,7 @@ class LibraryState extends ChangeNotifier {
     'readingJumpChapterReminderPercent': readingJumpChapterReminderPercent,
     'readingJumpReminderScope': readingJumpReminderScope.name,
     'startPage': _startPage.name,
+    'homeTabOrder': _homeTabOrder.map((page) => page.name).toList(),
     'directReadingPages': [
       for (final page in ReadingEntry.values)
         if (_directReadingPages.contains(page)) page.name,
@@ -4159,6 +4187,9 @@ class LibraryState extends ChangeNotifier {
           }
           if (records['startPage'] case final String value) {
             _startPage = AppStartPage.parseOrDefault(value);
+          }
+          if (records.containsKey('homeTabOrder')) {
+            _homeTabOrder = AppStartPage.orderedTabs(records['homeTabOrder']);
           }
           if (records.containsKey('directReadingPages') ||
               records.containsKey('directReading')) {

@@ -109,6 +109,176 @@ void main() {
     },
   );
 
+  for (final density in [
+    const BookGridDensity.auto(),
+    ...BookGridSize.values.map(BookGridDensity.sized),
+  ]) {
+    for (final scale in [1.0, 2.0]) {
+      testWidgets(
+        'grid slots align with missing series and wrapping title: ${density.value} scale $scale',
+        (tester) async {
+          tester.view.physicalSize = const Size(900, 1200);
+          tester.view.devicePixelRatio = 1;
+          addTearDown(tester.view.resetPhysicalSize);
+          addTearDown(tester.view.resetDevicePixelRatio);
+          final books = [
+            book,
+            const Novel(
+              id: 1043,
+              title: '短书名',
+              author: '',
+              genre: '',
+              summary: '',
+              colors: [Colors.grey, Colors.blue],
+            ),
+          ];
+          await tester.pumpWidget(
+            MaterialApp(
+              builder: (context, child) => MediaQuery(
+                data: MediaQuery.of(context).copyWith(
+                  textScaler: TextScaler.linear(scale),
+                  disableAnimations: true,
+                ),
+                child: child!,
+              ),
+              home: Scaffold(
+                body: CustomScrollView(
+                  slivers: [
+                    SliverPadding(
+                      padding: const EdgeInsets.all(24),
+                      sliver: BookCollectionSliver(
+                        grid: true,
+                        gridDensity: density,
+                        gridShowSeries: true,
+                        gridShowProgressBar: true,
+                        itemCount: books.length,
+                        itemBuilder: (context, index) => BookGridTile(
+                          key: ValueKey('aligned-tile-$index'),
+                          book: books[index],
+                          onTap: () {},
+                          trailing: const SizedBox.shrink(),
+                          seriesLabel: index == 0 ? '系列 · 测试' : null,
+                          progress: index == 0 ? '第 5/16 章 · 8/25 页' : '未读',
+                          progressValue: index == 0 ? .3 : 0,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+          await tester.pumpAndSettle();
+          expect(tester.takeException(), isNull);
+          for (final slot in ['title', 'author', 'series']) {
+            final a = tester.getRect(
+              find.byKey(ValueKey('grid-$slot-slot-1042')),
+            );
+            final b = tester.getRect(
+              find.byKey(ValueKey('grid-$slot-slot-1043')),
+            );
+            expect(a.top, closeTo(b.top, .01));
+            expect(a.bottom, closeTo(b.bottom, .01));
+          }
+          final a = tester.getRect(
+            find.descendant(
+              of: find.byKey(const ValueKey('aligned-tile-0')),
+              matching: find.byType(LinearProgressIndicator),
+            ),
+          );
+          final b = tester.getRect(
+            find.descendant(
+              of: find.byKey(const ValueKey('aligned-tile-1')),
+              matching: find.byType(LinearProgressIndicator),
+            ),
+          );
+          expect(a.top, closeTo(b.top, .01));
+          expect(a.bottom, closeTo(b.bottom, .01));
+          expect(
+            tester.getRect(find.byKey(const ValueKey('aligned-tile-0'))).bottom,
+            closeTo(
+              tester
+                  .getRect(find.byKey(const ValueKey('aligned-tile-1')))
+                  .bottom,
+              .01,
+            ),
+          );
+        },
+      );
+    }
+  }
+
+  for (final size in BookGridSize.values) {
+    for (final scale in [1.0, 2.0]) {
+      testWidgets('grid $size grows metadata for actual text scale $scale', (
+        tester,
+      ) async {
+        tester.view.physicalSize = const Size(320, 900);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        // Model a font with taller metrics than the layout's initial budget.
+        final geometry = BookGridViewport(
+          width: 272,
+          height: 780,
+          textScaler: TextScaler.noScaling,
+          showSeries: true,
+          showProgressBar: true,
+        ).resolve(BookGridDensity.sized(size));
+        await tester.pumpWidget(
+          MaterialApp(
+            builder: (context, child) => MediaQuery(
+              data: MediaQuery.of(context).copyWith(
+                textScaler: TextScaler.linear(scale),
+                disableAnimations: true,
+              ),
+              child: child!,
+            ),
+            home: Scaffold(
+              body: SingleChildScrollView(
+                child: BookGridScope(
+                  geometry: geometry,
+                  child: Align(
+                    alignment: Alignment.topLeft,
+                    child: SizedBox(
+                      width: geometry.cellWidth,
+                      child: BookGridTile(
+                        key: const ValueKey('overflow-tile'),
+                        book: book,
+                        onTap: () {},
+                        trailing: const SizedBox(width: 24),
+                        seriesLabel: '很长的系列名称',
+                        progress: '第 1/2 章 · 3/5 页',
+                        progressValue: .25,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+        final tile = tester.getRect(
+          find.byKey(const ValueKey('overflow-tile')),
+        );
+        final bar = tester.getRect(find.byType(LinearProgressIndicator));
+        expect(bar.bottom, lessThanOrEqualTo(tile.bottom));
+        expect(bar.left, greaterThanOrEqualTo(tile.left));
+        expect(bar.right, lessThanOrEqualTo(tile.right));
+        expect(
+          tester
+              .widget<LinearProgressIndicator>(
+                find.byType(LinearProgressIndicator),
+              )
+              .value,
+          .25,
+        );
+      });
+    }
+  }
+
   for (final brightness in Brightness.values) {
     testWidgets(
       'resume information and footer open the same saved chapter on $brightness',

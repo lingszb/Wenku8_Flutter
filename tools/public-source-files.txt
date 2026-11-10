@@ -253,7 +253,6 @@ assets/tokenizer/jieba-1.0.1.dgz
 docs/CI_CD.md
 docs/DESIGN.md
 docs/CLOUD_IMPORT.md
-docs/DESIGN.md
 docs/HAPTICS.md
 docs/ICON_SYSTEM.md
 docs/READER.md
@@ -1044,3 +1043,5 @@ test/book_categories_test.dart
 test/reader_return_point_test.dart
 assets/icons/randomRead.svg
 assets/icons/randomRead-active.svg
+
+test/bookshelf_migration_test.dart

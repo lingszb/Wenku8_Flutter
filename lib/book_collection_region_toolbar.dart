@@ -83,6 +83,7 @@ Future<String?> chooseBookCollectionRegionCategory(
   required Map<String, String> options,
   required String selected,
   required bool reduceMotion,
+  Future<String?> Function(BuildContext)? chooseCustomCategory,
 }) => showJellySheet<String>(
   context: context,
   reduceMotion: reduceMotion,
@@ -91,6 +92,7 @@ Future<String?> chooseBookCollectionRegionCategory(
     options: options,
     selected: selected,
     reduceMotion: reduceMotion,
+    chooseCustomCategory: chooseCustomCategory,
   ),
 );
 
@@ -118,19 +120,21 @@ enum _CategoryFamily {
   }
 }
 
-/// A view-only cascading selector. Named/manual categories remain managed by
-/// the lower collection's category sheet; no assignment or saved ID is migrated.
+/// A view-only cascading selector. Custom categories retain their original
+/// button style; creation and editing remain in the category management sheet.
 class BookShelfCategoryPicker extends StatefulWidget {
   const BookShelfCategoryPicker({
     super.key,
     required this.options,
     required this.selected,
     required this.reduceMotion,
+    this.chooseCustomCategory,
   });
 
   final Map<String, String> options;
   final String selected;
   final bool reduceMotion;
+  final Future<String?> Function(BuildContext)? chooseCustomCategory;
 
   @override
   State<BookShelfCategoryPicker> createState() =>
@@ -367,6 +371,37 @@ class _BookShelfCategoryPickerState extends State<BookShelfCategoryPicker> {
                   : () => Navigator.pop(context, choice),
               child: const AppText('使用分类'),
             ),
+          ],
+          if (widget.chooseCustomCategory != null) ...[
+            const SizedBox(height: 20),
+            GlassTextButton(
+              key: const ValueKey('shelf-manage-custom-categories'),
+              onPressed: () async {
+                final category = await widget.chooseCustomCategory!(context);
+                if (context.mounted && category != null) {
+                  Navigator.pop(context, category);
+                }
+              },
+              child: const AppText('自定义分类'),
+            ),
+          ] else if (widget.options.keys.any(
+            (id) => _CategoryFamily.of(id) == null,
+          )) ...[
+            const SizedBox(height: 20),
+            const ArchiveSection(title: '自定义分类', code: 'LIBRARY / CUSTOM'),
+            const SizedBox(height: 12),
+            for (final entry in widget.options.entries)
+              if (_CategoryFamily.of(entry.key) == null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: GlassTextButton(
+                    key: ValueKey('shelf-custom-category-${entry.key}'),
+                    onPressed: () => Navigator.pop(context, entry.key),
+                    child: AppText(
+                      '${entry.key == widget.selected ? '✓  ' : ''}${entry.value}',
+                    ),
+                  ),
+                ),
           ],
         ],
       ),
