@@ -41,7 +41,7 @@ class _IllustrationDecodes {
 class ReaderIllustrationCache {
   ReaderIllustrationCache({
     this.offlineReader,
-    this.maxBytes = 16 * 1024 * 1024,
+    this.maxBytes = 64 * 1024 * 1024,
   });
   static final shared = ReaderIllustrationCache();
 
@@ -214,6 +214,50 @@ class ReaderIllustrationCache {
   }
 
   Future<Uint8List> load(String url) => _requestFor(url).future;
+
+  /// Warm a small reading window, including pixels, rather than just ZIP bytes.
+  /// Stop between images when the reader moves; a failure keeps its normal retry.
+  Future<void> prefetch(
+    Iterable<String> urls, {
+    required BuildContext context,
+    required Size available,
+    required bool Function() current,
+  }) async {
+    final ratio = MediaQuery.devicePixelRatioOf(context);
+    for (final url in urls.toSet().take(4)) {
+      if (!current() || !context.mounted) return;
+      try {
+        final request = _requestFor(url);
+        final bytes = await request.future;
+        if (!current() || !context.mounted) return;
+        final size = await _rememberSize(url, bytes, request.source);
+        if (!current() || !context.mounted || !_current(url, request.source)) {
+          return;
+        }
+        final provider = _decodeProvider(
+          url,
+          bytes,
+          request.source,
+          readerIllustrationDecodeWidth(
+            imageSize: size,
+            available: available,
+            devicePixelRatio: ratio,
+          ),
+        );
+        var failed = false;
+        await precacheImage(
+          provider,
+          context,
+          onError: (error, stack) => failed = true,
+        );
+        if (!failed && _current(url, request.source)) {
+          _decoded(url, bytes, request.source, provider);
+        }
+      } catch (_) {
+        // Speculation must not replace the visible image's error/retry path.
+      }
+    }
+  }
 
   _IllustrationRead _requestFor(
     String url, {
@@ -560,6 +604,7 @@ class _ReaderIllustrationState extends State<ReaderIllustration> {
                   fitPage: widget.fullScreen || widget.fitPage,
                   preserveSize:
                       !widget.fullScreen &&
+                      !widget.fitPage &&
                       widget.url.startsWith('wenku-local:'),
                   localLayout: widget.localLayout,
                   fontSize: widget.fontSize,

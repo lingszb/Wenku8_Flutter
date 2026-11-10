@@ -444,6 +444,58 @@ class _ReaderPagedViewState extends State<ReaderPagedView>
   final _pageBodies = <int, Widget>{};
   int _pageBodyBuilds = 0;
   final _textLayout = ReaderTextLayoutCache();
+  int _imageWarmup = 0;
+
+  void _warmPageImages() {
+    final ticket = ++_imageWarmup;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || ticket != _imageWarmup || _pagination == null) return;
+      final pagination = _pagination!;
+      final page = _page;
+      final urls = <String>{};
+      void add(ReaderLeaf leaf) {
+        for (final fragment in leaf.fragments) {
+          if (!fragment.image) continue;
+          final url = readerIllustrationUrl(fragment.text);
+          if (url != null) urls.add(url);
+        }
+      }
+
+      // Current pixels first, then two upcoming spreads and one behind. At a
+      // chapter edge include the already prepared neighbouring chapter.
+      final count = _bookLayout!.count;
+      final first = _spreadFor(page) * count - _leadingPages;
+      for (final spread in [0, 1, 2, -1]) {
+        for (var slot = 0; slot < count; slot++) {
+          final index = first + spread * count + slot;
+          if (index >= 0 && index < pagination.pages.length) {
+            add(pagination.pages[index]);
+          } else {
+            final adjacent = _adjacentLayouts[index < 0 ? -1 : 1];
+            if (adjacent == null) continue;
+            final pages = adjacent.pagination.pages;
+            final at = index < 0
+                ? pages.length + index
+                : index - pagination.pages.length;
+            if (at >= 0 && at < pages.length) add(pages[at]);
+          }
+        }
+      }
+      unawaited(
+        ReaderIllustrationCache.shared.prefetch(
+          urls,
+          context: context,
+          available: Size(_frameSize.width, pagination.size.height),
+          current: () =>
+              mounted &&
+              ticket == _imageWarmup &&
+              identical(_pagination, pagination) &&
+              _page == page,
+        ),
+      );
+    });
+  }
+
   // Pagination is canonical for its content, geometry and typography inputs.
   // This bounded cache saves work; evicting it must not change page boundaries.
   final _layouts =
@@ -916,12 +968,16 @@ class _ReaderPagedViewState extends State<ReaderPagedView>
               heading,
             ),
           );
+          _warmPageImages();
         } catch (_) {
           // The normal request/retry path remains available at an unready edge.
         }
       }());
     }
-    if (changed) setState(() {});
+    if (changed) {
+      setState(() {});
+      _warmPageImages();
+    }
     return deferred;
   }
 
@@ -1190,6 +1246,7 @@ class _ReaderPagedViewState extends State<ReaderPagedView>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       oldPager?.dispose();
       if (mounted && ticket == _generation) {
+        _warmPageImages();
         widget.onReady();
         widget.onChanged();
       }
@@ -1245,13 +1302,27 @@ class _ReaderPagedViewState extends State<ReaderPagedView>
     final direction = chapterDirection ?? _turnDirection;
     final active = boundary || _swipeOrigin != null && _turnSpread != null;
     final incoming = boundary ? !chapterOutgoing : spread == _turnSpread;
+    final fullWidthPages = <int>{};
     Widget paper(Widget page, int slot) {
       if (_effect == ReaderPageEffect.paper) {
         final physical = rtl ? layout.count - 1 - slot : slot;
         final frame = layout.frameFor(physical, frameInsets);
-        final bodyRect = layout.pages[physical].shift(
+        var bodyRect = layout.pages[physical].shift(
           Offset(frameInsets.left - frame.left, frameInsets.top),
         );
+        if (fullWidthPages.contains(slot)) {
+          bodyRect = Rect.fromLTRB(
+            physical == 0 && layout.pages[physical].left == 0
+                ? 0
+                : bodyRect.left,
+            bodyRect.top,
+            physical == layout.count - 1 &&
+                    layout.pages[physical].right == layout.viewport.width
+                ? frame.width
+                : bodyRect.right,
+            bodyRect.bottom,
+          );
+        }
         page = Stack(
           clipBehavior: Clip.none,
           children: [
@@ -1307,6 +1378,12 @@ class _ReaderPagedViewState extends State<ReaderPagedView>
               : const SizedBox.shrink(),
         );
         continue;
+      }
+      final leaf = pagination.pages[index];
+      if (!leaf.vertical &&
+          leaf.fragments.length == 1 &&
+          leaf.fragments.single.image) {
+        fullWidthPages.add(slot);
       }
       final body = (adjacent?.bodies ?? _pageBodies).putIfAbsent(index, () {
         _pageBodyBuilds++;
@@ -1412,6 +1489,8 @@ class _ReaderPagedViewState extends State<ReaderPagedView>
     final book = ReaderBookSpread(
       key: ValueKey('reader-book-spread-$spread'),
       layout: layout,
+      fullWidthPages: fullWidthPages,
+      imageInsets: padding,
       frameInsets: _effect == ReaderPageEffect.paper ? frameInsets : null,
       edgeOverflow: _effect == ReaderPageEffect.staggered && active
           ? (padding.left > padding.right ? padding.left : padding.right)
@@ -1882,6 +1961,7 @@ class _ReaderPagedViewState extends State<ReaderPagedView>
               _pageBodies.removeWhere(
                 (index, _) => (_spreadFor(index) - value).abs() > 1,
               );
+              _warmPageImages();
               widget.onChanged();
             },
             itemBuilder: (context, index) {

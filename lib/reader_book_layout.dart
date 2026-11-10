@@ -113,6 +113,8 @@ class ReaderBookSpread extends StatelessWidget {
     this.verticalOverflow = 0,
     this.clipLeaves = true,
     this.frameInsets,
+    this.fullWidthPages = const {},
+    this.imageInsets = EdgeInsets.zero,
   });
   final ReaderBookLayout layout;
   final List<Widget> pages;
@@ -121,6 +123,23 @@ class ReaderBookSpread extends StatelessWidget {
   final double verticalOverflow;
   final bool clipLeaves;
   final EdgeInsets? frameInsets;
+  final Set<int> fullWidthPages;
+  final EdgeInsets imageInsets;
+
+  Rect _pageRect(int index) {
+    final physical = rightToLeft ? layout.count - 1 - index : index;
+    if (frameInsets != null) return layout.frameFor(physical, frameInsets!);
+    final rect = layout.pages[physical];
+    if (!fullWidthPages.contains(index)) return rect;
+    return Rect.fromLTRB(
+      physical == 0 && rect.left == 0 ? -imageInsets.left : rect.left,
+      rect.top,
+      physical == layout.count - 1 && rect.right == layout.viewport.width
+          ? layout.viewport.width + imageInsets.right
+          : rect.right,
+      rect.bottom,
+    );
+  }
 
   @override
   Widget build(BuildContext context) => Stack(
@@ -154,12 +173,7 @@ class ReaderBookSpread extends StatelessWidget {
         ),
       for (var index = 0; index < pages.length; index++)
         Positioned.fromRect(
-          rect: frameInsets == null
-              ? layout.pages[rightToLeft ? layout.count - 1 - index : index]
-              : layout.frameFor(
-                  rightToLeft ? layout.count - 1 - index : index,
-                  frameInsets!,
-                ),
+          rect: _pageRect(index),
           child: Semantics(
             sortKey: OrdinalSortKey(index.toDouble()),
             child: ClipRect(
