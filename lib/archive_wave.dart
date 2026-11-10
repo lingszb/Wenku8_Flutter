@@ -35,8 +35,12 @@ class ArchiveFileCarousel extends StatefulWidget {
     this.repeatFill = true,
     this.showChrome = true,
     this.initialIndex = 0,
+    this.showProgressBar = true,
+    this.seriesLabel,
   });
   final List<Novel> books;
+  final bool showProgressBar;
+  final String? Function(Novel)? seriesLabel;
   final void Function(Novel book, Object heroTag) onOpen;
   final bool reduceMotion;
   final bool animateEntrance;
@@ -378,6 +382,7 @@ class _ArchiveFileCarouselState extends State<ArchiveFileCarousel>
                                           book,
                                           fontSize: 12,
                                         ),
+                                        _seriesLine(context, book),
                                       ],
                                     ),
                                   ),
@@ -492,7 +497,7 @@ class _ArchiveFileCarouselState extends State<ArchiveFileCarousel>
               ),
             ),
           ),
-          if (progress != null) ...[
+          if (widget.showProgressBar && progress != null) ...[
             const SizedBox(width: 8),
             SizedBox(
               width: 52,
@@ -522,6 +527,25 @@ class _ArchiveFileCarouselState extends State<ArchiveFileCarousel>
       );
     },
   );
+
+  Widget _seriesLine(BuildContext context, Novel book) {
+    final label = widget.seriesLabel?.call(book);
+    if (label == null || label.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: AppText(
+        label,
+        key: ValueKey('shelf-series-${book.id}'),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          fontSize: 12,
+          height: 1.5,
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
+        ),
+      ),
+    );
+  }
 
   Widget _information(BuildContext context) => ActiveListenableBuilder(
     listenable: widget.library?.historyChanges ?? _active,
@@ -605,6 +629,7 @@ class _ArchiveFileCarouselState extends State<ArchiveFileCarousel>
                 height: scaler.scale(14) * 1.5,
                 child: _authorLine(context, book, fontSize: 14),
               ),
+              _seriesLine(context, book),
               const SizedBox(height: 12),
               SizedBox(
                 height: scaler.scale(12) * 1.5 * 2,
@@ -652,7 +677,9 @@ class _ArchiveFileCarouselState extends State<ArchiveFileCarousel>
                             ),
                           ),
                           const Spacer(),
-                          if (read && progress != null)
+                          if (widget.showProgressBar &&
+                              read &&
+                              progress != null)
                             ClipRRect(
                               borderRadius: BorderRadius.circular(2),
                               child: LinearProgressIndicator(

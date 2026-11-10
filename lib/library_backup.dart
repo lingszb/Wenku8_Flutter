@@ -66,6 +66,7 @@ final backupPreferenceKeys = <String>{
   'readingJumpChapterReminderPercent',
   'readingJumpReminderScope',
   'startPage',
+  'homeTabOrder',
   'directReadingPages',
   'combinedShelf',
   'localTxtEncoding',
@@ -79,6 +80,7 @@ const _listKeys = {
   'recentSearches',
   'local_shelf_hidden',
   'directReadingPages',
+  'homeTabOrder',
 };
 const restoreJournalKey = 'library_restore_journal';
 final _recordKey = RegExp(
@@ -221,6 +223,12 @@ Map<String, Object> _validateRecords(Map<String, dynamic> input) {
             throw const FormatException('搜索记录格式有误');
           }
           if (seen.add(item.trim().toLowerCase())) list.add(item.trim());
+        } else if (key == 'homeTabOrder') {
+          if (!AppStartPage.homeTabs.any((page) => page.name == item) ||
+              !seen.add(item)) {
+            throw const FormatException('导航顺序设置有误');
+          }
+          list.add(item);
         } else if (key == 'directReadingPages') {
           if (!ReadingEntry.values.any((page) => page.name == item)) {
             throw const FormatException('直接阅读页面设置有误');
@@ -233,6 +241,9 @@ Map<String, Object> _validateRecords(Map<String, dynamic> input) {
           }
           if (seen.add('$id')) list.add('$id');
         }
+      }
+      if (key == 'homeTabOrder' && list.length != 3) {
+        throw const FormatException('导航顺序须包含全部三个页面');
       }
       output[key] = List<String>.unmodifiable(list);
     } else if (backupPreferenceKeys.contains(key)) {

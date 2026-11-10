@@ -34,20 +34,41 @@ enum BookCollectionMode {
 enum AppStartPage {
   discovery,
   shelf,
-  local;
+  local,
+  profile;
 
   String get label => switch (this) {
     discovery => '发现',
     shelf => '书架',
     local => '本地',
+    profile => '我的',
   };
 
   static AppStartPage? tryParse(Object? value) => switch (value) {
     'discovery' => discovery,
     'shelf' => shelf,
     'local' => local,
+    'profile' => profile,
     _ => null,
   };
+
+  static const homeTabs = [shelf, local, profile];
+
+  static List<AppStartPage> orderedTabs(Object? value) {
+    final result = <AppStartPage>[];
+    if (value is List) {
+      for (final item in value) {
+        final page = tryParse(item);
+        if (homeTabs.contains(page) && !result.contains(page)) {
+          result.add(page!);
+        }
+      }
+    }
+    return List.unmodifiable([
+      ...result,
+      ...homeTabs.where((page) => !result.contains(page)),
+    ]);
+  }
 
   static AppStartPage parseOrDefault(Object? value) =>
       tryParse(value) ?? discovery;

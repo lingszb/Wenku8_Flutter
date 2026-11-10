@@ -62,6 +62,8 @@ class _BookCollectionSliverState extends State<BookCollectionSliver> {
   int? _columns;
   Object? _gridLayoutKey, _viewportKey;
   BookGridGeometry? _geometry;
+  BookGridViewport? _viewport;
+  Object? _viewportInputs;
 
   @override
   void didUpdateWidget(BookCollectionSliver oldWidget) {
@@ -103,19 +105,38 @@ class _BookCollectionSliverState extends State<BookCollectionSliver> {
   Widget _buildRows() => SliverLayoutBuilder(
     builder: (context, constraints) {
       if (widget.grid) {
-        final viewport = BookGridViewport(
-          width: constraints.crossAxisExtent,
-          height:
-              (constraints.viewportMainAxisExtent -
-                      constraints.precedingScrollExtent -
-                      widget.gridBottomInset)
-                  .clamp(0.0, double.infinity),
-          textScaler: MediaQuery.textScalerOf(context),
-          textStyle: DefaultTextStyle.of(context).style,
-          textDirection: Directionality.of(context),
-          showSeries: widget.gridShowSeries,
-          showProgressBar: widget.gridShowProgressBar,
+        final height =
+            (constraints.viewportMainAxisExtent -
+                    constraints.precedingScrollExtent -
+                    widget.gridBottomInset)
+                .clamp(0.0, double.infinity);
+        final scaler = MediaQuery.textScalerOf(context);
+        final style = DefaultTextStyle.of(context).style;
+        final direction = Directionality.of(context);
+        final inputs = (
+          constraints.crossAxisExtent,
+          height,
+          scaler,
+          style,
+          direction,
+          widget.gridShowSeries,
+          widget.gridShowProgressBar,
         );
+        // Scroll offsets do not change font metrics. Reuse measured slots
+        // until the actual viewport, typeface, scale or display options change.
+        if (_viewportInputs != inputs || _viewport == null) {
+          _viewport = BookGridViewport(
+            width: constraints.crossAxisExtent,
+            height: height,
+            textScaler: scaler,
+            textStyle: style,
+            textDirection: direction,
+            showSeries: widget.gridShowSeries,
+            showProgressBar: widget.gridShowProgressBar,
+          );
+          _viewportInputs = inputs;
+        }
+        final viewport = _viewport!;
         _geometry = viewport.resolve(widget.gridDensity);
         if (_viewportKey != viewport.layoutKey) {
           _viewportKey = viewport.layoutKey;
@@ -169,10 +190,10 @@ class _BookCollectionSliverState extends State<BookCollectionSliver> {
           ),
         );
       }
-      if (widget.grid && !widget.gridDensity.automatic) {
+      if (widget.grid) {
         return _rows = BookGridScope(
           geometry: _geometry!,
-          child: widget.gridDensity.size != null
+          child: widget.gridDensity.automatic || widget.gridDensity.size != null
               ? rows
               : SliverMainAxisGroup(
                   slivers: [

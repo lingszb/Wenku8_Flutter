@@ -130,10 +130,11 @@ void main() {
       expect(navigation.tabs, [1, 2, 3]);
       expect(navigation.destination(1), 1);
       expect(navigation.destination(2), 2);
-      expect(navigation.destination(0), 2);
+      expect(navigation.destination(0), 1);
       navigation.dispose();
       final dock = tester.widget<GlassDock>(find.byType(GlassDock));
       expect(dock.items.map((item) => item.label), ['书架', '本地', '我的']);
+      expect(dock.selectedIndex, 0);
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pumpAndSettle();

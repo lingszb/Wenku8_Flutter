@@ -44,6 +44,7 @@ import 'blocked_tags_controls.dart';
 import 'catalog.dart';
 import 'glass_dock.dart';
 import 'home_navigation.dart';
+import 'glass_choices.dart';
 import 'library_state.dart';
 import 'reading_activity.dart';
 import 'reading_moment_cover.dart';
@@ -217,21 +218,13 @@ class HomeShellState extends State<HomeShell> with TickerProviderStateMixin {
   void initState() {
     super.initState();
     _visibleTabs = _navigation.tabs;
+    _navigation.addListener(_navigationChanged);
     _tab = _navigation.destination(widget.state.startPage.index);
     _visitedTabs.add(_tab);
     _searchText.addListener(_searchEdited);
     if (widget.repository case final OfflineNovelRepository offline) {
       unawaited(offline.loadCache().catchError((Object _) {}));
     }
-    final shelf = ShelfPage(
-      books: const [],
-      state: widget.state,
-      repository: widget.repository,
-      showHeader: false,
-      compactMainPageControls: true,
-      onSearch: _openSearch,
-      navigation: _navigation,
-    );
     final settings = MyPage(
       state: widget.state,
       repository: widget.repository,
@@ -266,11 +259,46 @@ class HomeShellState extends State<HomeShell> with TickerProviderStateMixin {
               entry: ReadingEntry.local,
             ),
           );
+    final shelf = local == null
+        ? ShelfPage(
+            books: const [],
+            state: widget.state,
+            repository: widget.repository,
+            showHeader: false,
+            onSearch: _openSearch,
+            navigation: _navigation,
+          )
+        : LocalLibraryPage(
+            books: local,
+            state: widget.state,
+            repository: widget.repository,
+            showHeader: false,
+            showcase: true,
+            compactMainPageControls: true,
+            onSearch: _openSearch,
+            onOpen: (page, book) => openDetail(
+              page,
+              book,
+              widget.state,
+              widget.repository,
+              entry: ReadingEntry.shelf,
+            ),
+            onOpenWithCover: (page, book, tag) => openDetail(
+              page,
+              book,
+              widget.state,
+              widget.repository,
+              coverHeroTag: tag,
+              entry: ReadingEntry.shelf,
+            ),
+          );
     _headers = [
       (_) => const SizedBox.shrink(),
-      shelf.buildHeader,
+      (context) => shelf is LocalLibraryPage
+          ? shelf.buildHeader(context)
+          : (shelf as ShelfPage).buildHeader(context),
       localPage?.buildHeader ??
-          (_) => const ArchiveMasthead(title: '本地', code: '03 / LOCAL ARCHIVE'),
+          (_) => const ArchiveMasthead(title: '本地', code: 'LOCAL ARCHIVE'),
       settings.buildHeader,
     ];
     _pageWidgets =
@@ -288,6 +316,11 @@ class HomeShellState extends State<HomeShell> with TickerProviderStateMixin {
               ),
             )
             .toList(growable: false);
+  }
+
+  void _navigationChanged() {
+    if (!mounted) return;
+    setState(() => _visibleTabs = _navigation.tabs);
   }
 
   void _routeChanged(ModalRoute<dynamic>? route) {
@@ -413,7 +446,9 @@ class HomeShellState extends State<HomeShell> with TickerProviderStateMixin {
         widget.state.reduceMotion || MediaQuery.disableAnimationsOf(context);
     setState(() {
       if (index != _tab) {
-        _tabDirection = index > _tab ? 1 : -1;
+        _tabDirection = _visibleTabs.indexOf(index) > _visibleTabs.indexOf(_tab)
+            ? 1
+            : -1;
         _outgoingTab = reduceMotion ? null : _tab;
         if (reduceMotion) {
           _pageTransition.value = 1;
@@ -713,10 +748,7 @@ class HomeShellState extends State<HomeShell> with TickerProviderStateMixin {
                 opacity: 1 - expansion,
                 child: Align(
                   alignment: Alignment.centerLeft,
-                  child: ArchiveMasthead(
-                    title: '本地',
-                    code: '03 / LOCAL ARCHIVE',
-                  ),
+                  child: ArchiveMasthead(title: '本地', code: 'LOCAL ARCHIVE'),
                 ),
               ),
             ),
@@ -1431,62 +1463,60 @@ class ShelfPage extends StatefulWidget {
   final VoidCallback? onSearch;
   final HomeNavigation? navigation;
 
-  Widget buildHeader(BuildContext context, {VoidCallback? search}) =>
-      AnimatedBuilder(
-        animation: state.navigationChanges,
-        builder: (context, _) => Row(
-          children: [
-            Expanded(
-              child: const ArchiveMasthead(
-                title: '书架',
-                code: '02 / PERSONAL ARCHIVE',
-              ),
-            ),
-            GlassIconButton(
-              icon: CupertinoIcons.clock,
-              label: '阅读历史',
-              onPressed: () => openReadingHistory(context, state, repository),
-            ),
-            if (state.combinedShelf && repository is OfflineNovelRepository)
-              if ((repository as OfflineNovelRepository).local
-                  case final local?)
-                LocalBookImportButton(
+  Widget buildHeader(
+    BuildContext context, {
+    VoidCallback? search,
+  }) => AnimatedBuilder(
+    animation: state.navigationChanges,
+    builder: (context, _) => Row(
+      children: [
+        Expanded(
+          child: const ArchiveMasthead(title: '书架', code: 'PERSONAL ARCHIVE'),
+        ),
+        GlassIconButton(
+          icon: CupertinoIcons.clock,
+          label: '阅读历史',
+          onPressed: () => openReadingHistory(context, state, repository),
+        ),
+        if (state.combinedShelf && repository is OfflineNovelRepository)
+          if ((repository as OfflineNovelRepository).local case final local?)
+            LocalBookImportButton(
+              books: local,
+              library: state,
+              onManage: () => pushNovelPage<void>(
+                context,
+                LocalLibraryPage(
                   books: local,
-                  library: state,
-                  onManage: () => pushNovelPage<void>(
-                    context,
-                    LocalLibraryPage(
-                      books: local,
-                      state: state,
-                      repository: repository,
-                      onOpen: (page, book) => openDetail(
-                        page,
-                        book,
-                        state,
-                        repository,
-                        entry: ReadingEntry.local,
-                      ),
-                      onOpenWithCover: (page, book, tag) => openDetail(
-                        page,
-                        book,
-                        state,
-                        repository,
-                        coverHeroTag: tag,
-                        entry: ReadingEntry.local,
-                      ),
-                    ),
-                    reduceMotion: state.reduceMotion,
+                  state: state,
+                  repository: repository,
+                  onOpen: (page, book) => openDetail(
+                    page,
+                    book,
+                    state,
+                    repository,
+                    entry: ReadingEntry.local,
+                  ),
+                  onOpenWithCover: (page, book, tag) => openDetail(
+                    page,
+                    book,
+                    state,
+                    repository,
+                    coverHeroTag: tag,
+                    entry: ReadingEntry.local,
                   ),
                 ),
-            GlassIconButton(
-              key: const ValueKey('shelf-search-entry'),
-              icon: CupertinoIcons.search,
-              label: '搜索书架',
-              onPressed: onSearch ?? search,
+                reduceMotion: state.reduceMotion,
+              ),
             ),
-          ],
+        GlassIconButton(
+          key: const ValueKey('shelf-search-entry'),
+          icon: CupertinoIcons.search,
+          label: '搜索书架',
+          onPressed: onSearch ?? search,
         ),
-      );
+      ],
+    ),
+  );
 
   @override
   State<ShelfPage> createState() => _ShelfPageState();
@@ -1927,7 +1957,7 @@ class _ShelfPageState extends State<ShelfPage>
                   const Expanded(
                     child: ArchiveMasthead(
                       title: '书架',
-                      code: '02 / PERSONAL ARCHIVE',
+                      code: 'PERSONAL ARCHIVE',
                     ),
                   ),
                   GlassIconButton(
@@ -2584,7 +2614,7 @@ class SettingsPage extends StatelessWidget {
 
   Widget buildHeader(BuildContext context) => Align(
     alignment: Alignment.centerLeft,
-    child: const ArchiveMasthead(title: '设置', code: '04 / SYSTEM PROFILE'),
+    child: const ArchiveMasthead(title: '设置', code: 'SYSTEM PROFILE'),
   );
 
   @override
@@ -2718,10 +2748,58 @@ class SettingsPage extends StatelessWidget {
     ),
   );
 
+  void _moveHomeTab(BuildContext context, int index, int delta) {
+    final next = state.homeTabOrder.toList();
+    final page = next.removeAt(index);
+    next.insert(index + delta, page);
+    _savePreference(context, () => state.setHomeTabOrder(next));
+  }
+
   List<Widget> _usageOptions(BuildContext context) => [
     ContentPanel(
       child: Column(
         children: [
+          const ArchiveSection(title: '导航与启动', code: 'SYSTEM / NAVIGATION'),
+          const SizedBox(height: 12),
+          GlassChoiceGroup<AppStartPage>(
+            name: 'settings-start-page',
+            label: '启动后优先展示',
+            value: state.startPage == AppStartPage.discovery
+                ? AppStartPage.shelf
+                : state.startPage,
+            options: {
+              for (final page in AppStartPage.homeTabs) page: page.label,
+            },
+            onChanged: (page) =>
+                _savePreference(context, () => state.setStartPage(page)),
+          ),
+          const SizedBox(height: 16),
+          const Align(
+            alignment: Alignment.centerLeft,
+            child: AppText('Tab 排列顺序'),
+          ),
+          for (final (index, page) in state.homeTabOrder.indexed)
+            Row(
+              key: ValueKey('settings-tab-order-${page.name}'),
+              children: [
+                Expanded(child: AppText(page.label)),
+                GlassIconButton(
+                  icon: CupertinoIcons.arrow_up,
+                  label: '前移${page.label}',
+                  onPressed: index == 0
+                      ? null
+                      : () => _moveHomeTab(context, index, -1),
+                ),
+                GlassIconButton(
+                  icon: CupertinoIcons.arrow_down,
+                  label: '后移${page.label}',
+                  onPressed: index == 2
+                      ? null
+                      : () => _moveHomeTab(context, index, 1),
+                ),
+              ],
+            ),
+          const Divider(height: 22),
           _toggleSetting(
             context,
             keyName: 'settings-force-portrait',
@@ -2748,7 +2826,10 @@ class SettingsPage extends StatelessWidget {
                 spacing: 8,
                 runSpacing: 8,
                 children: [
-                  for (final page in const [ReadingEntry.local])
+                  for (final page in const [
+                    ReadingEntry.shelf,
+                    ReadingEntry.local,
+                  ])
                     GlassTextButton(
                       key: ValueKey('settings-direct-reading-${page.name}'),
                       selected: state.directReadingOn(page),

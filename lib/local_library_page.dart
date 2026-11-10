@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
@@ -9,6 +10,7 @@ import 'app_ui.dart';
 import 'app_search_field.dart';
 import 'archive_carousel.dart';
 import 'book_collection_layout.dart';
+import 'book_collection_mode.dart';
 import 'book_collection_grid.dart';
 import 'book_collection_view_options.dart';
 import 'book_collection_region_toolbar.dart';
@@ -31,7 +33,7 @@ import 'local_series_editor.dart';
 import 'book_dynamic_categories.dart';
 import 'local_book_removal.dart';
 import 'local_book_batch_page.dart';
-import 'pages.dart' show NovelRow, openReadingHistory;
+import 'pages.dart' show NovelRow, ReaderLoaderPage, openReadingHistory;
 import 'ui_notifiers.dart';
 
 export 'cloud_book_sync_panel.dart' show CloudBookSyncPanel;
@@ -75,7 +77,7 @@ Widget _localLibraryHeader(
           onPressed: () => Navigator.pop(context),
         ),
       const Expanded(
-        child: ArchiveMasthead(title: '本地', code: '03 / LOCAL ARCHIVE'),
+        child: ArchiveMasthead(title: '本地', code: 'LOCAL ARCHIVE'),
       ),
       GlassMenuAnchor(
         child: Builder(
@@ -94,11 +96,8 @@ Widget _localLibraryHeader(
           key: const ValueKey('local-reading-history'),
           icon: CupertinoIcons.clock,
           label: '阅读历史',
-          onPressed: () => openReadingHistory(
-            context,
-            historyState,
-            historyRepository,
-          ),
+          onPressed: () =>
+              openReadingHistory(context, historyState, historyRepository),
         ),
       GlassIconButton(
         key: const ValueKey('local-search'),
@@ -127,6 +126,7 @@ class LocalLibraryPage extends StatefulWidget {
     this.documents,
     this.cloudSettings,
     this.onSearch,
+    this.showcase = false,
   });
   final LocalBookStore books;
   final LibraryState state;
@@ -134,18 +134,38 @@ class LocalLibraryPage extends StatefulWidget {
   final void Function(BuildContext, Novel, Object)? onOpenWithCover;
   final NovelRepository? repository;
   final bool showHeader;
+  final bool showcase;
   final bool compactMainPageControls;
   final LocalLibraryController? controller;
   final BookDocuments? documents;
   final CloudSourceSettings? cloudSettings;
   final VoidCallback? onSearch;
-  Widget buildHeader(BuildContext context) => _localLibraryHeader(
-    context,
-    controller,
-    back: showHeader,
-    historyState: state,
-    historyRepository: repository,
-  );
+  Widget buildHeader(BuildContext context) => showcase
+      ? Row(
+          children: [
+            if (showHeader)
+              GlassIconButton(
+                icon: CupertinoIcons.back,
+                label: '返回',
+                onPressed: () => Navigator.pop(context),
+              ),
+            const Expanded(
+              child: ArchiveMasthead(title: '书架', code: 'PERSONAL ARCHIVE'),
+            ),
+            GlassIconButton(
+              icon: CupertinoIcons.search,
+              label: '搜索书架',
+              onPressed: onSearch ?? controller?.search,
+            ),
+          ],
+        )
+      : _localLibraryHeader(
+          context,
+          controller,
+          back: showHeader,
+          historyState: state,
+          historyRepository: repository,
+        );
 
   @override
   State<LocalLibraryPage> createState() => _LocalLibraryPageState();
@@ -357,7 +377,7 @@ class _LocalLibraryPageState extends State<LocalLibraryPage>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed && mounted) {
+    if (!widget.showcase && state == AppLifecycleState.resumed && mounted) {
       _importer.scanOnEntry(context, resumed: true);
     }
   }
@@ -366,7 +386,10 @@ class _LocalLibraryPageState extends State<LocalLibraryPage>
   void didChangeDependencies() {
     super.didChangeDependencies();
     final current = ModalRoute.isCurrentOf(context);
-    final scanActive = current != false && TickerMode.valuesOf(context).enabled;
+    final scanActive =
+        !widget.showcase &&
+        current != false &&
+        TickerMode.valuesOf(context).enabled;
     if (scanActive && !_scanActive) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _importer.scanOnEntry(context);
@@ -643,7 +666,10 @@ class _LocalLibraryPageState extends State<LocalLibraryPage>
           padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
           child: BookCollectionViewOptions(
             target: target,
-            mode: organization.viewMode,
+            standaloneShelf: true,
+            mode: organization.viewMode.hasShelf
+                ? BookCollectionMode.shelfList
+                : organization.viewMode,
             onModeChanged: (mode) =>
                 _save(() => organization.setViewMode(mode)),
             showProgressBar: organization.showProgressBar,
@@ -665,7 +691,7 @@ class _LocalLibraryPageState extends State<LocalLibraryPage>
               BookShelfContentSort.recentAdded: '最近导入',
               BookShelfContentSort.title: '书名',
             },
-            shelfContentHint: '上方立体书架可独立展示本地分类与阅读状态；下方仍按页面筛选。',
+            shelfContentHint: '书架只展示书籍；导入与批量整理请前往本地。',
             reduceMotion: widget.state.reduceMotion,
             onShelfPreferencesChanged: (preferences) =>
                 _save(() => organization.setShelfPreferences(preferences)),
@@ -716,6 +742,12 @@ class _LocalLibraryPageState extends State<LocalLibraryPage>
           ? organization.selected
           : _shelfCategory(organization),
       reduceMotion: widget.state.reduceMotion,
+      chooseCustomCategory: (sheet) => chooseBookCategory(
+        sheet,
+        organization,
+        selected: _shelfCategory(organization),
+        reduceMotion: widget.state.reduceMotion,
+      ),
     );
     if (category != null && mounted) {
       await _save(
@@ -729,33 +761,11 @@ class _LocalLibraryPageState extends State<LocalLibraryPage>
     }
   }
 
-  Widget _collectionToolbar(
-    LocalLibraryPreferences? organization,
-    int count, {
-    bool region = false,
-  }) {
+  Widget _collectionToolbar(LocalLibraryPreferences? organization, int count) {
     final category = organization == null
         ? '全部书籍'
         : _shelfCategoryOptions(organization)[organization.selected] ??
               organization.nameOf(organization.selected);
-    if (region) {
-      return BookCollectionRegionToolbar(
-        key: const ValueKey('local-collection-region-toolbar'),
-        title: '本地书籍',
-        category: category,
-        count: count,
-        loading: organization == null,
-        activeFilters: organization?.readingFilter == 'all' ? 0 : 1,
-        categoryKey: const ValueKey('local-category'),
-        filterKey: const ValueKey('local-filter'),
-        viewKey: const ValueKey('local-display'),
-        onCategory: organization == null ? null : _categories,
-        onFilter: organization == null ? null : _filters,
-        onView: organization == null
-            ? null
-            : () => _display(target: BookCollectionViewTarget.collection),
-      );
-    }
     return LibraryToolbar(
       categoryKey: const ValueKey('local-category'),
       optionsKey: const ValueKey('local-filter'),
@@ -800,7 +810,7 @@ class _LocalLibraryPageState extends State<LocalLibraryPage>
         viewKey: const ValueKey('local-shelf-display'),
         onCategory: _chooseShelfCategory,
         onFilter: _shelfFilters,
-        onView: () => _display(target: BookCollectionViewTarget.shelf),
+        onView: () => _display(),
       );
 
   Future<void> _filters() async {
@@ -873,13 +883,127 @@ class _LocalLibraryPageState extends State<LocalLibraryPage>
     super.dispose();
   }
 
-  Widget _header(BuildContext context) => _localLibraryHeader(
-    context,
-    _controller,
-    back: true,
-    historyState: widget.state,
-    historyRepository: widget.repository,
-  );
+  Widget _header(BuildContext context) => widget.showcase
+      ? widget.buildHeader(context)
+      : _localLibraryHeader(
+          context,
+          _controller,
+          back: true,
+          historyState: widget.state,
+          historyRepository: widget.repository,
+        );
+
+  int? _lastRandomId;
+  final _random = Random();
+
+  void _readNow(Novel book) {
+    final repository = widget.repository;
+    if (repository == null) return;
+    unawaited(
+      pushNovelPage<void>(
+        context,
+        ReaderLoaderPage(
+          novel: book,
+          state: widget.state,
+          repository: repository,
+        ),
+        reduceMotion: widget.state.reduceMotion,
+        slot: ('reader-entry', book.id),
+      ),
+    );
+  }
+
+  void _randomRead() {
+    final members = _localMembership();
+    if (members.isEmpty) {
+      showNovelFeedback(context, '暂无可读书籍，请先到本地导入');
+      return;
+    }
+    final candidates = members.length > 1
+        ? members.where((book) => book.id != _lastRandomId).toList()
+        : members;
+    final book = candidates[_random.nextInt(candidates.length)];
+    _lastRandomId = book.id;
+    _readNow(book);
+  }
+
+  String _recentProgress(Novel book) {
+    final timestamp = widget.state.lastReadAt(book.id);
+    if (timestamp <= 0) return _gridProgress(book);
+    final date = DateTime.fromMillisecondsSinceEpoch(timestamp);
+    String pad(int value) => value.toString().padLeft(2, '0');
+    return '${_gridProgress(book)} · ${date.year}-${pad(date.month)}-${pad(date.day)} ${pad(date.hour)}:${pad(date.minute)}';
+  }
+
+  Widget _readingEntries() {
+    final members = {for (final book in _localMembership()) book.id: book};
+    final recent = widget.state.readingHistoryIds
+        .where(members.containsKey)
+        .take(3)
+        .map((id) => members[id]!)
+        .toList();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Wrap(
+          spacing: 12,
+          runSpacing: 8,
+          children: [
+            GlassTextButton(
+              key: const ValueKey('shelf-random-read'),
+              onPressed: widget.repository == null || members.isEmpty
+                  ? null
+                  : _randomRead,
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  ArchiveIcon.symbol(ArchiveSymbol.randomRead, size: 20),
+                  SizedBox(width: 8),
+                  AppText('随机阅读'),
+                ],
+              ),
+            ),
+            if (widget.repository != null)
+              GlassTextButton(
+                key: const ValueKey('shelf-recent-read'),
+                onPressed: () => openReadingHistory(
+                  context,
+                  widget.state,
+                  widget.repository!,
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    ArchiveIcon.symbol(ArchiveSymbol.recentRead, size: 20),
+                    SizedBox(width: 8),
+                    AppText('最近阅读'),
+                  ],
+                ),
+              ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        if (recent.isEmpty)
+          const Padding(
+            padding: EdgeInsets.only(bottom: 20),
+            child: AppText('还没有阅读记录，从书架挑一本开始吧。'),
+          ),
+        for (final book in recent)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 16),
+            child: NovelRow(
+              key: ValueKey('shelf-recent-${book.id}'),
+              novel: book,
+              progress: _recentProgress(book),
+              progressValue: _progressValue(book),
+              onTap: () => _readNow(book),
+            ),
+          ),
+        const Divider(height: 24),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final organization = _organization;
@@ -912,13 +1036,13 @@ class _LocalLibraryPageState extends State<LocalLibraryPage>
                       : const <Novel>[];
                   final shelf =
                       organization?.showsShelf(featured.length) == true;
-                  final mixed = organization?.viewMode.hasShelf == true;
-                  final grid = organization?.viewMode.isGrid == true;
+                  final shelfMode = organization?.viewMode.hasShelf == true;
+                  final grid =
+                      !shelfMode && organization?.viewMode.isGrid == true;
                   final independent =
                       organization?.viewMode.hasShelf == true &&
                       organization?.shelfContent.followCollection == false;
-                  // A carousel is a featured view, not a replacement for the index.
-                  // Every filtered book remains reachable in the same complete list.
+                  // Both pages reuse the same exclusive list, shelf and grid layouts.
                   final rows = books;
                   return LoadedContentSequence(
                     generation: (
@@ -931,7 +1055,9 @@ class _LocalLibraryPageState extends State<LocalLibraryPage>
                       grid,
                     ),
                     child: CustomScrollView(
-                      key: const PageStorageKey('local-library'),
+                      key: PageStorageKey(
+                        widget.showcase ? 'showcase-library' : 'local-library',
+                      ),
                       clipBehavior: LibraryReflowScope.clipOf(context),
                       cacheExtent: BookCollectionLayout.cacheExtentFor(
                         MediaQuery.sizeOf(context).width - 48,
@@ -959,7 +1085,8 @@ class _LocalLibraryPageState extends State<LocalLibraryPage>
                               Column(
                                 crossAxisAlignment: CrossAxisAlignment.stretch,
                                 children: [
-                                  if (mixed)
+                                  if (widget.showcase) _readingEntries(),
+                                  if (shelfMode)
                                     _shelfToolbar(
                                       organization!,
                                       featured.length,
@@ -974,8 +1101,10 @@ class _LocalLibraryPageState extends State<LocalLibraryPage>
                                   const SizedBox(height: 14),
                                   if (widget.books.books.isEmpty &&
                                       organization != null) ...[
-                                    const AppText(
-                                      '还没有本地书籍，点击右上角导入按钮添加。',
+                                    AppText(
+                                      widget.showcase
+                                          ? '书架还空着，请到本地页面导入书籍。'
+                                          : '还没有本地书籍，点击右上角导入按钮添加。',
                                       style: TextStyle(height: 1.7),
                                     ),
                                   ],
@@ -1009,7 +1138,7 @@ class _LocalLibraryPageState extends State<LocalLibraryPage>
                                   if (organization != null &&
                                       books.isEmpty &&
                                       widget.books.books.isNotEmpty &&
-                                      !mixed)
+                                      !shelfMode)
                                     const Padding(
                                       padding: EdgeInsets.symmetric(
                                         vertical: 24,
@@ -1021,14 +1150,14 @@ class _LocalLibraryPageState extends State<LocalLibraryPage>
                             ),
                           ),
                         ),
-                        if (mixed && featured.isEmpty)
+                        if (shelfMode && featured.isEmpty)
                           const SliverPadding(
                             padding: EdgeInsets.fromLTRB(24, 0, 24, 20),
                             sliver: SliverToBoxAdapter(
                               child: AppText('立体书架暂无符合条件的书籍'),
                             ),
                           ),
-                        if (mixed && featured.isNotEmpty && !shelf)
+                        if (shelfMode && featured.isNotEmpty && !shelf)
                           SliverPadding(
                             padding: const EdgeInsets.fromLTRB(24, 0, 24, 20),
                             sliver: SliverToBoxAdapter(
@@ -1068,107 +1197,92 @@ class _LocalLibraryPageState extends State<LocalLibraryPage>
                                 repeatFill:
                                     organization.shelfPreferences.repeatFill,
                                 library: widget.state,
-                                entry: ReadingEntry.local,
+                                showProgressBar: organization.showProgressBar,
+                                seriesLabel: _seriesLabel,
+                                entry: widget.showcase
+                                    ? ReadingEntry.shelf
+                                    : ReadingEntry.local,
                                 reduceMotion: widget.state.reduceMotion,
                                 animateEntrance: true,
                                 onOpen: _open,
                               ),
                             ),
                           ),
-                        if (mixed)
+                        if (!shelfMode)
                           SliverPadding(
-                            padding: const EdgeInsets.fromLTRB(24, 20, 24, 16),
-                            sliver: SliverToBoxAdapter(
-                              child: _localToolbarPaint(
-                                Column(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.stretch,
-                                  children: [
-                                    _collectionToolbar(
-                                      organization,
-                                      books.length,
-                                      region: true,
-                                    ),
-                                    _searchField(),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                        if (mixed && books.isEmpty)
-                          const SliverPadding(
-                            padding: EdgeInsets.fromLTRB(24, 20, 24, 24),
-                            sliver: SliverToBoxAdapter(
-                              child: AppText('下方暂无符合条件的书籍，换个分类或关键词试试。'),
-                            ),
-                          ),
-                        SliverPadding(
-                          padding: const EdgeInsets.symmetric(horizontal: 24),
-                          sliver: BookCollectionSliver(
-                            shareRowGlass: !grid,
-                            grid: grid,
-                            gridShowSeries: organization?.showSeries ?? true,
-                            gridShowProgressBar:
-                                organization?.showProgressBar ?? true,
-                            gridDensity:
-                                organization?.gridDensity ??
-                                const BookGridDensity.auto(),
-                            gridBottomInset: widget.showHeader
-                                ? MediaQuery.paddingOf(context).bottom + 32
-                                : DockLayout.scrollPaddingOf(context),
-                            onGridViewport: (v) => _gridViewport.value = v,
-                            itemCount: rows.length,
-                            itemBuilder: (context, index) {
-                              final book = rows[index],
-                                  tag = ValueKey(
-                                    'local-cover-${rows[index].id}',
-                                  );
-                              return LoadedContentItem(
-                                key: ValueKey(book.id),
-                                index: index,
-                                placeholder: grid
-                                    ? const BookGridSkeleton()
-                                    : const BookRowSkeleton(),
-                                child: grid
-                                    ? BookGridTile(
-                                        key: ValueKey(
-                                          'local-grid-book-${book.id}',
-                                        ),
-                                        book: book,
-                                        coverHeroTag: tag,
-                                        onTap: () => _open(book, tag),
-                                        progress: _gridProgress(book),
-                                        progressValue: _progressValue(book),
-                                        seriesLabel: _seriesLabel(book),
-                                        trailing: GlassIconButton.custom(
-                                          label: '整理 ${book.title}',
-                                          onPressed: () => _bookMenu(book),
-                                          liveGlass: false,
-                                          transparent: true,
-                                          child: const ArchiveIcon(
-                                            CupertinoIcons.ellipsis,
-                                            size: 18,
+                            padding: const EdgeInsets.symmetric(horizontal: 24),
+                            sliver: BookCollectionSliver(
+                              shareRowGlass: !grid,
+                              grid: grid,
+                              gridShowSeries: organization?.showSeries ?? true,
+                              gridShowProgressBar:
+                                  organization?.showProgressBar ?? true,
+                              gridDensity:
+                                  organization?.gridDensity ??
+                                  const BookGridDensity.auto(),
+                              gridBottomInset: widget.showHeader
+                                  ? MediaQuery.paddingOf(context).bottom + 32
+                                  : DockLayout.scrollPaddingOf(context),
+                              onGridViewport: (v) => _gridViewport.value = v,
+                              itemCount: rows.length,
+                              itemBuilder: (context, index) {
+                                final book = rows[index],
+                                    tag = ValueKey(
+                                      'local-cover-${rows[index].id}',
+                                    );
+                                return LoadedContentItem(
+                                  key: ValueKey(book.id),
+                                  index: index,
+                                  placeholder: grid
+                                      ? const BookGridSkeleton()
+                                      : const BookRowSkeleton(),
+                                  child: grid
+                                      ? BookGridTile(
+                                          key: ValueKey(
+                                            'local-grid-book-${book.id}',
                                           ),
+                                          book: book,
+                                          coverHeroTag: tag,
+                                          onTap: () => _open(book, tag),
+                                          progress: _gridProgress(book),
+                                          progressValue: _progressValue(book),
+                                          seriesLabel: _seriesLabel(book),
+                                          trailing: widget.showcase
+                                              ? const SizedBox.shrink()
+                                              : GlassIconButton.custom(
+                                                  label: '整理 ${book.title}',
+                                                  onPressed: () =>
+                                                      _bookMenu(book),
+                                                  liveGlass: false,
+                                                  transparent: true,
+                                                  child: const ArchiveIcon(
+                                                    CupertinoIcons.ellipsis,
+                                                    size: 18,
+                                                  ),
+                                                ),
+                                        )
+                                      : NovelRow(
+                                          novel: book,
+                                          progress: _gridProgress(book),
+                                          progressValue: _progressValue(book),
+                                          seriesLabel: _seriesLabel(book),
+                                          coverHeroTag: tag,
+                                          onTap: () => _open(book, tag),
+                                          trailing: widget.showcase
+                                              ? null
+                                              : GlassIconButton(
+                                                  icon: CupertinoIcons.ellipsis,
+                                                  label: '整理 ${book.title}',
+                                                  onPressed: () =>
+                                                      _bookMenu(book),
+                                                  liveGlass:
+                                                      _localRowGlassAction,
+                                                ),
                                         ),
-                                      )
-                                    : NovelRow(
-                                        novel: book,
-                                        progress: _gridProgress(book),
-                                        progressValue: _progressValue(book),
-                                        seriesLabel: _seriesLabel(book),
-                                        coverHeroTag: tag,
-                                        onTap: () => _open(book, tag),
-                                        trailing: GlassIconButton(
-                                          icon: CupertinoIcons.ellipsis,
-                                          label: '整理 ${book.title}',
-                                          onPressed: () => _bookMenu(book),
-                                          liveGlass: _localRowGlassAction,
-                                        ),
-                                      ),
-                              );
-                            },
+                                );
+                              },
+                            ),
                           ),
-                        ),
                         SliverToBoxAdapter(
                           child: SizedBox(
                             height: widget.showHeader

@@ -37,6 +37,7 @@ class BookCollectionViewOptions extends StatelessWidget {
     this.gridViewport,
     this.target = BookCollectionViewTarget.all,
     this.onShowLayoutOptions,
+    this.standaloneShelf = false,
     this.showProgressBar = true,
     this.showSeries = true,
     this.progressDisplay = BookProgressDisplay.percentage,
@@ -60,6 +61,7 @@ class BookCollectionViewOptions extends StatelessWidget {
   final bool reduceMotion;
   final BookCollectionViewTarget target;
   final VoidCallback? onShowLayoutOptions;
+  final bool standaloneShelf;
   final bool showProgressBar, showSeries;
   final BookProgressDisplay progressDisplay;
   final ValueChanged<bool>? onShowProgressBarChanged, onShowSeriesChanged;
@@ -91,7 +93,13 @@ class BookCollectionViewOptions extends StatelessWidget {
           label: '布局',
           value: mode,
           options: {
-            for (final value in BookCollectionMode.values) value: value.label,
+            for (final value in BookCollectionMode.values)
+              if (!standaloneShelf || value != BookCollectionMode.shelfGrid)
+                value: standaloneShelf && value.hasShelf
+                    ? '立体书架'
+                    : standaloneShelf && value == BookCollectionMode.grid
+                    ? '宫格'
+                    : value.label,
           },
           optionName: (value) => value.storageValue,
           leading: (value) => ArchiveIcon(iconFor(value), size: 16),
@@ -129,7 +137,7 @@ class BookCollectionViewOptions extends StatelessWidget {
                     child: Padding(
                       padding: EdgeInsets.only(bottom: 12),
                       child: AppText(
-                        '上方 · 立体书架',
+                        '立体书架',
                         style: TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.w600,

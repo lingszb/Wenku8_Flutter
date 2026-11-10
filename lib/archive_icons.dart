@@ -104,7 +104,9 @@ enum ArchiveSymbol {
   tools('故障排查', '系统'),
   shield('安全', '系统'),
   help('帮助', '系统'),
-  touch('触摸', '阅读');
+  touch('触摸', '阅读'),
+  randomRead('随机阅读', '阅读'),
+  recentRead('最近阅读', '阅读');
 
   const ArchiveSymbol(this.label, this.group);
   final String label, group;
