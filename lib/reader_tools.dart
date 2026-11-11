@@ -11,6 +11,8 @@ import 'app_interactions.dart';
 import 'catalog.dart';
 import 'library_state.dart';
 import 'reader_annotation_editor.dart';
+import 'reader_image_annotation_editor.dart';
+import 'reader_annotations.dart';
 import 'reader_bookmark_excerpt.dart';
 import 'local_platform.dart';
 import 'reader_preferences.dart';
@@ -880,17 +882,43 @@ class _ReaderToolsState extends State<ReaderTools>
     }
   }
 
+  Future<void> _showBookmarkNote(ReaderBookmark mark) async {
+    if (mark.note.isEmpty) {
+      await _editBookmark(mark);
+      return;
+    }
+    await showReaderNote(
+      context,
+      mark.note,
+      reduceMotion: widget.state.reduceMotion,
+      title: '批注',
+      code: 'BOOKMARK / NOTE',
+      closeLabel: '关闭',
+      editLabel: '修改批注',
+      onEdit: () => _editBookmark(mark),
+    );
+  }
+
   Future<void> _editBookmark(ReaderBookmark mark) async {
     setState(() => _storageError = null);
     try {
-      await showReaderAnnotationEditor(
-        context,
-        state: widget.state,
-        novelId: widget.novel.id,
-        novel: widget.novel,
-        bookmark: mark,
-        rangeContextResolver: widget.rangeContextResolver,
-      );
+      if (mark.isImage) {
+        await showReaderImageAnnotationEditor(
+          context,
+          state: widget.state,
+          novelId: widget.novel.id,
+          bookmark: mark,
+        );
+      } else {
+        await showReaderAnnotationEditor(
+          context,
+          state: widget.state,
+          novelId: widget.novel.id,
+          novel: widget.novel,
+          bookmark: mark,
+          rangeContextResolver: widget.rangeContextResolver,
+        );
+      }
     } catch (_) {
       if (mounted) {
         setState(() => _storageError = '书签与批注暂时无法打开，请重试');
@@ -1624,6 +1652,7 @@ class _ReaderToolsState extends State<ReaderTools>
                 (height, mark) =>
                     height +
                     66 +
+                    (mark.imageUrl.isEmpty ? 0 : 108) +
                     (mark.quote.isEmpty ? 0 : 62 * scale) +
                     (mark.note.isEmpty ? 0 : 28 * scale),
               );
@@ -1763,6 +1792,7 @@ class _ReaderToolsState extends State<ReaderTools>
                               quoteMaxLines: 2,
                               noteMaxLines: 1,
                               compact: true,
+                              onNoteTap: () => _showBookmarkNote(mark),
                             ),
                           ],
                         ),

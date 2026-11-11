@@ -32,6 +32,7 @@ import 'book_shelf_preferences.dart';
 import 'book_shelf_content_preferences.dart';
 import 'discovery_shelf_query.dart';
 import 'reader_underline.dart';
+import 'reader_content.dart' show validReaderIllustrationUrl;
 import 'reader_annotation_range.dart';
 import 'reading_activity.dart';
 import 'reading_moments.dart';
@@ -186,6 +187,7 @@ class ReaderBookmark {
     required this.chapterTitle,
     required this.position,
     this.quote = '',
+    this.imageUrl = '',
     this.category = '',
     this.categoryAt = 0,
     this.underlineRanges = const [],
@@ -198,6 +200,9 @@ class ReaderBookmark {
   final String chapterTitle;
   final ReadingPosition position;
   final String quote;
+
+  /// Illustration referenced by an image excerpt; empty for ordinary marks.
+  final String imageUrl;
   final String category;
   final int categoryAt;
 
@@ -217,8 +222,10 @@ class ReaderBookmark {
           : const ReaderAnnotationData(style: ReaderMarkStyle.none));
   final int rangeUpdatedAt;
   String get note => annotation.note;
-  String get kindLabel =>
-      isUnderline && annotation.style != ReaderMarkStyle.none
+  bool get isImage => imageUrl.isNotEmpty;
+  String get kindLabel => isImage
+      ? '图片书签'
+      : isUnderline && annotation.style != ReaderMarkStyle.none
       ? annotation.style.label
       : '书签';
   bool get isUnderline => underlineRanges.isNotEmpty;
@@ -227,6 +234,7 @@ class ReaderBookmark {
     chapterTitle: chapterTitle,
     position: position,
     quote: quote,
+    imageUrl: imageUrl,
     category: value,
     categoryAt: at,
     underlineRanges: underlineRanges,
@@ -242,6 +250,7 @@ class ReaderBookmark {
     chapterTitle: chapterTitle,
     position: position,
     quote: quote,
+    imageUrl: imageUrl,
     category: category,
     categoryAt: categoryAt,
     underlineRanges: underlineRanges,
@@ -263,6 +272,7 @@ class ReaderBookmark {
     chapterTitle: chapterTitle,
     position: position,
     quote: quote,
+    imageUrl: imageUrl,
     category: category,
     categoryAt: categoryAt,
     underlineRanges: ranges,
@@ -278,6 +288,7 @@ class ReaderBookmark {
         chapterTitle: chapterTitle,
         position: position,
         quote: quote,
+        imageUrl: imageUrl,
         category: category,
         categoryAt: categoryAt,
         underlineRanges: underlineRanges,
@@ -292,6 +303,7 @@ class ReaderBookmark {
     'chapterTitle': chapterTitle,
     'position': position.toJson(),
     if (quote.isNotEmpty) 'quote': quote,
+    if (imageUrl.isNotEmpty) 'image': imageUrl,
     if (category.isNotEmpty || categoryAt > 0) 'category': category,
     if (categoryAt > 0) 'categoryAt': categoryAt,
     if (!annotation.isEmpty ||
@@ -312,6 +324,7 @@ class ReaderBookmark {
     final title = json['chapterTitle'];
     final position = json['position'];
     final quote = json['quote'] ?? '';
+    final image = json['image'] ?? '';
     final category = json['category'] ?? '';
     final createdAt = json['createdAt'] is String
         ? DateTime.tryParse(json['createdAt'] as String)
@@ -323,6 +336,9 @@ class ReaderBookmark {
         position is! Map ||
         quote is! String ||
         quote.length > 12000 ||
+        image is! String ||
+        image.length > 2048 ||
+        (image.isNotEmpty && !validReaderIllustrationUrl(image)) ||
         category is! String ||
         category.length > 30 ||
         (json['createdAt'] != null &&
@@ -343,6 +359,7 @@ class ReaderBookmark {
       chapterTitle: title,
       position: ReadingPosition.fromJson(Map<String, dynamic>.from(position)),
       quote: quote,
+      imageUrl: image,
       category: category,
       categoryAt: json['categoryAt'] ?? 0,
       createdAt: createdAt,
@@ -2042,7 +2059,57 @@ class LibraryState extends ChangeNotifier {
       final marks = _bookmarks[novelId] ?? const <ReaderBookmark>[];
       final previous = marks.where((mark) => mark.id == id).firstOrNull;
       if (previous == null) throw const FormatException('这条书签已被移除');
-      result = previous.withAnnotation(_datedAnnotation(data, previous));
+      result = previous.withAnnotation(
+        _datedAnnotation(
+          data.withImageNote(
+            previous.annotation.imageNote,
+            previous.annotation.imageNoteX,
+            previous.annotation.imageNoteY,
+          ),
+          previous,
+        ),
+      );
+      final next = [for (final mark in marks) mark.id == id ? result : mark];
+      await _writeBookmarks(novelId, next);
+      _bookmarks[novelId] = next;
+      _updateUnderlineIndex(novelId);
+      if (!_disposed) _bookmarkChanges.notifyListeners();
+    });
+    return result;
+  }
+
+  /// Saves text painted over an image excerpt without touching its prose note
+  /// or mark appearance.
+  Future<ReaderBookmark> updateBookmarkImageNote(
+    int novelId,
+    String id, {
+    required String text,
+    required double x,
+    required double y,
+  }) async {
+    final note = text.trim();
+    if (note.length > ReaderAnnotationData.maxImageNoteLength) {
+      throw const FormatException('图片批注过长，请精简后重试');
+    }
+    if (!x.isFinite || x < 0 || x > 1 || !y.isFinite || y < 0 || y > 1) {
+      throw const FormatException('图片批注位置无效');
+    }
+    if (_restoreBarrier case final barrier?) {
+      return barrier.future.then(
+        (_) => updateBookmarkImageNote(novelId, id, text: text, x: x, y: y),
+      );
+    }
+    late ReaderBookmark result;
+    await _queuePositionWrite(() async {
+      final marks = _bookmarks[novelId] ?? const <ReaderBookmark>[];
+      final previous = marks.where((mark) => mark.id == id).firstOrNull;
+      if (previous == null) throw const FormatException('这条书签已被移除');
+      result = previous.withAnnotation(
+        _datedAnnotation(
+          previous.annotation.withImageNote(note, x, y),
+          previous,
+        ),
+      );
       final next = [for (final mark in marks) mark.id == id ? result : mark];
       await _writeBookmarks(novelId, next);
       _bookmarks[novelId] = next;
@@ -2281,16 +2348,27 @@ class LibraryState extends ChangeNotifier {
     required Novel novel,
     required ReadingPosition position,
     String quote = '',
+    String imageUrl = '',
   }) async {
     if (_restoreBarrier case final barrier?) {
       return barrier.future.then(
-        (_) => addBookmark(novel: novel, position: position, quote: quote),
+        (_) => addBookmark(
+          novel: novel,
+          position: position,
+          quote: quote,
+          imageUrl: imageUrl,
+        ),
       );
     }
     final index = chapterForPosition(novel, position);
     final excerpt = quote.trim();
+    final image = imageUrl.trim();
     if (excerpt.length > 12000) {
       throw const FormatException('摘录过长，请选择不超过 12000 字的内容');
+    }
+    if (image.length > 2048 ||
+        (image.isNotEmpty && !validReaderIllustrationUrl(image))) {
+      throw const FormatException('图片地址无效，请重新打开插图');
     }
     if (novel.id <= 0 ||
         index == null ||
@@ -2310,6 +2388,7 @@ class LibraryState extends ChangeNotifier {
       for (final mark in marks) {
         if (!mark.isUnderline &&
             mark.quote == excerpt &&
+            mark.imageUrl == image &&
             chapterForPosition(novel, mark.position) == index &&
             (excerpt.isEmpty ||
                 mark.position.paragraphIndex == position.paragraphIndex &&
@@ -2333,6 +2412,7 @@ class LibraryState extends ChangeNotifier {
         chapterTitle: novel.chapters[index].title,
         position: position,
         quote: excerpt,
+        imageUrl: image,
       );
       final next = [mark, ...marks];
       final snapshot = _novelSnapshot(novel);
@@ -2743,6 +2823,7 @@ class LibraryState extends ChangeNotifier {
             chapterTitle: mark.chapterTitle,
             position: move(mark.position, identity, target) ?? mark.position,
             quote: mark.quote,
+            imageUrl: mark.imageUrl,
             category: mark.category,
             categoryAt: mark.categoryAt,
             underlineRanges: moveRanges(mark, identity) ?? mark.underlineRanges,
@@ -2809,6 +2890,7 @@ class LibraryState extends ChangeNotifier {
             chapterTitle: target.chapters[mapped.chapter].title,
             position: mapped,
             quote: mark.quote,
+            imageUrl: mark.imageUrl,
             category: mark.category,
             categoryAt: mark.categoryAt,
             underlineRanges: ranges,
@@ -3010,6 +3092,7 @@ class LibraryState extends ChangeNotifier {
             chapterTitle: target.chapters[mapped.chapter].title,
             position: mapped,
             quote: mark.quote,
+            imageUrl: mark.imageUrl,
             category: mark.category,
             categoryAt: mark.categoryAt,
             underlineRanges: ranges,
@@ -3937,6 +4020,7 @@ class LibraryState extends ChangeNotifier {
                   chapterTitle: mark.chapterTitle,
                   position: mark.position,
                   quote: mark.quote,
+                  imageUrl: mark.imageUrl,
                   category: mark.category,
                   categoryAt: mark.categoryAt,
                   underlineRanges: mark.underlineRanges,
@@ -4242,6 +4326,7 @@ class LibraryState extends ChangeNotifier {
     }
     final position = {...bookmark.position.toJson()}..remove('updatedAt');
     if (bookmark.quote.isNotEmpty) position['quote'] = bookmark.quote;
+    if (bookmark.imageUrl.isNotEmpty) position['image'] = bookmark.imageUrl;
     return jsonEncode(position);
   }
 
@@ -4278,6 +4363,7 @@ class LibraryState extends ChangeNotifier {
   static bool _canDeduplicateBookmark(ReaderBookmark a, ReaderBookmark b) =>
       a.rangeUpdatedAt == 0 &&
       b.rangeUpdatedAt == 0 &&
+      a.imageUrl == b.imageUrl &&
       a.annotation.style == b.annotation.style &&
       a.annotation.color == b.annotation.color &&
       a.note == b.note;

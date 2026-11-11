@@ -145,6 +145,18 @@ class ReaderContent {
   }
 }
 
+/// Persisted bookmark images use exactly the sources reader illustrations
+/// load: the managed local store or a cacheable remote URL.
+bool validReaderIllustrationUrl(String url) {
+  final uri = Uri.tryParse(url);
+  if (uri == null) return false;
+  if (LocalBookMedia.valid(uri)) return true;
+  return ['https', 'http'].contains(uri.scheme) &&
+      uri.userInfo.isEmpty &&
+      (!uri.hasPort || [80, 443].contains(uri.port)) &&
+      uri.host.isNotEmpty;
+}
+
 /// Standalone paired markers in persisted reader content. Images keep their
 /// paragraph index, so bookmarks and lazy restoration share one coordinate map.
 String? readerIllustrationUrl(String paragraph) {
@@ -161,15 +173,8 @@ String? readerIllustrationUrl(String paragraph) {
   if (uri != null && LocalBookMedia.valid(uri)) {
     return LocalImageLayout.parseSuffix(tail) == null ? null : uri.toString();
   }
-  if (tail.isNotEmpty) return null;
-  if (uri == null ||
-      !['https', 'http'].contains(uri.scheme) ||
-      uri.userInfo.isNotEmpty ||
-      (uri.hasPort && ![80, 443].contains(uri.port)) ||
-      uri.host.isEmpty) {
-    return null;
-  }
-  return uri.replace(scheme: 'https', port: 443).toString();
+  if (tail.isNotEmpty || !validReaderIllustrationUrl(raw)) return null;
+  return uri!.replace(scheme: 'https', port: 443).toString();
 }
 
 final _missingIllustration = RegExp(r'(^|\n)[ \t]*\[插图\][ \t]*(\n|$)');

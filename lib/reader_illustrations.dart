@@ -784,11 +784,17 @@ class ReaderIllustrationGallery extends StatefulWidget {
     this.cache,
     this.title = '章节插图',
     this.fileNamePrefix = '文库插图',
+    this.onBookmark,
   }) : assert(urls.length > 0);
   final List<String> urls;
   final String initialUrl;
   final ReaderIllustrationCache? cache;
   final String title, fileNamePrefix;
+
+  /// Stores the shown illustration as a reader bookmark. Returns whether a new
+  /// mark was created, null when the reader has no usable position yet, and
+  /// throws when storage fails. Absent when the gallery has no chapter context.
+  final Future<bool?> Function(String url)? onBookmark;
   @override
   State<ReaderIllustrationGallery> createState() =>
       _ReaderIllustrationGalleryState();
@@ -799,7 +805,8 @@ class _ReaderIllustrationGalleryState extends State<ReaderIllustrationGallery> {
       .indexOf(widget.initialUrl)
       .clamp(0, widget.urls.length - 1);
   late final _pages = PageController(initialPage: _page);
-  bool _saving = false;
+  bool _saving = false, _bookmarking = false;
+  final _bookmarked = <int>{};
   int? _dragPage;
   void _dragStart(ScaleStartDetails details) {
     _dragCancel();
@@ -877,6 +884,46 @@ class _ReaderIllustrationGalleryState extends State<ReaderIllustrationGallery> {
     }
   }
 
+  Future<void> _bookmark() async {
+    final onBookmark = widget.onBookmark;
+    if (_bookmarking || onBookmark == null) return;
+    final page = _page;
+    setState(() => _bookmarking = true);
+    try {
+      final added = await onBookmark(widget.urls[page]);
+      if (!mounted) return;
+      if (added == null) {
+        showNovelFeedback(context, '阅读位置正在恢复，请稍后再试');
+        return;
+      }
+      setState(() => _bookmarked.add(page));
+      showNovelFeedback(context, added ? '已加入书签' : '这张图片已在书签中');
+    } catch (error) {
+      if (mounted) {
+        showNovelFeedback(
+          context,
+          error is FormatException ? error.message : '书签保存失败，请重试',
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _bookmarking = false);
+    }
+  }
+
+  Widget _bookmarkButton(BuildContext context) {
+    final saved = _bookmarked.contains(_page);
+    return GlassIconButton(
+      key: const ValueKey('book-image-bookmark'),
+      icon: saved ? CupertinoIcons.bookmark_fill : CupertinoIcons.bookmark,
+      label: _bookmarking
+          ? '正在保存图片书签'
+          : saved
+          ? '这张图片已在书签中'
+          : '收藏这张图片',
+      onPressed: _bookmarking ? null : _bookmark,
+    );
+  }
+
   Widget _saveButton(BuildContext context) => GallerySaveButton(
     key: const ValueKey('book-image-save'),
     enabled: !_saving,
@@ -929,7 +976,10 @@ class _ReaderIllustrationGalleryState extends State<ReaderIllustrationGallery> {
             title: widget.title,
             code: 'IMAGE / ${_page + 1} OF ${widget.urls.length}',
           ),
-          actions: [if (!LocalPlatform.harmony) _saveButton(context)],
+          actions: [
+            if (widget.onBookmark != null) _bookmarkButton(context),
+            if (!LocalPlatform.harmony) _saveButton(context),
+          ],
         ),
         body: GestureDetector(
           behavior: HitTestBehavior.opaque,

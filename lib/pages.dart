@@ -100,6 +100,7 @@ import 'reader_find.dart';
 import 'reader_book_find.dart';
 import 'reader_annotations.dart';
 import 'reader_annotation_editor.dart';
+import 'reader_image_annotation_editor.dart';
 import 'reader_embedded_vertical.dart';
 import 'lan_reading_sync.dart';
 import 'lan_reading_page.dart';
@@ -7346,6 +7347,16 @@ class _ReaderPageState extends State<ReaderPage>
             ReaderIllustrationGallery(
               urls: source!.illustrations,
               initialUrl: url,
+              onBookmark: (imageUrl) {
+                final paragraph = source.paragraphs.indexWhere(
+                  (text) => readerIllustrationUrl(text) == imageUrl,
+                );
+                return _addIllustrationBookmark(
+                  imageUrl: imageUrl,
+                  chapter: chapter,
+                  paragraph: paragraph < 0 ? index : paragraph,
+                );
+              },
             ),
           ),
           slot: ReaderIllustrationGallery,
@@ -8328,6 +8339,70 @@ class _ReaderPageState extends State<ReaderPage>
               text.length <= 12000
           ? text
           : '',
+    );
+  }
+
+  Future<bool?> _addIllustrationBookmark({
+    required String imageUrl,
+    required int chapter,
+    required int paragraph,
+  }) async {
+    if (chapter < 0 || chapter >= _sourceBook.chapters.length) return null;
+    final base =
+        _currentPosition(bookmark: true) ??
+        widget.state.positionFor(widget.novel.id);
+    if (base == null) return null;
+    final existing = widget.state
+        .bookmarksFor(_sourceBook.id)
+        .where(
+          (mark) =>
+              mark.isImage &&
+              mark.imageUrl == imageUrl &&
+              widget.state.chapterForPosition(_sourceBook, mark.position) ==
+                  chapter,
+        )
+        .firstOrNull;
+    if (existing != null) {
+      _openImageAnnotation(existing);
+      return false;
+    }
+    final position = ReadingPosition.fromJson({
+      ...base.toJson(),
+      'chapter': chapter,
+      'chapterId': _sourceBook.chapters[chapter].id,
+      'contentRevision': chapter == _chapter
+          ? _currentContent?.revision ?? ''
+          : base.contentRevision,
+      if (chapter != base.chapter) ...{
+        'offset': 0,
+        'fraction': 0,
+        'width': 0,
+        'layout': '',
+      },
+      'paragraphIndex': paragraph,
+      'textOffset': 0,
+      'paragraphFraction': 0,
+    });
+    final mark = await widget.state.addBookmark(
+      novel: _sourceBook,
+      position: position,
+      imageUrl: imageUrl,
+    );
+    if (mark != null) _openImageAnnotation(mark);
+    return mark != null;
+  }
+
+  /// Opens the picture-first annotation pad without holding up the gallery's
+  /// bookmark feedback; the editor stacks above the still-open gallery.
+  void _openImageAnnotation(ReaderBookmark mark) {
+    if (!mounted) return;
+    unawaited(
+      showReaderImageAnnotationEditor(
+        context,
+        state: widget.state,
+        novelId: _sourceBook.id,
+        bookmark: mark,
+      ),
     );
   }
 

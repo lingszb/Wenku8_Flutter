@@ -17,7 +17,9 @@ import 'reading_report_fonts.dart';
 import 'bookmark_categories.dart';
 import 'reader_underline.dart';
 import 'reader_annotation_editor.dart';
+import 'reader_image_annotation_editor.dart';
 import 'reader_annotation_source.dart';
+import 'reader_annotations.dart';
 import 'reader_bookmark_excerpt.dart';
 import 'setting_menu.dart';
 
@@ -66,6 +68,7 @@ List<({int novelId, ReaderBookmark bookmark})> libraryBookmarks(
     final target = mark.position;
     return target.chapterId == volume.chapterIds[chapter] &&
         mark.quote == entry.bookmark.quote &&
+        mark.imageUrl == entry.bookmark.imageUrl &&
         target.paragraphIndex == source.paragraphIndex &&
         target.textOffset == source.textOffset &&
         target.offset == source.offset &&
@@ -279,22 +282,50 @@ class _BookmarkLibraryPageState extends State<BookmarkLibraryPage>
     }
   }
 
-  Future<void> _edit(int id, ReaderBookmark mark) => showReaderAnnotationEditor(
-    context,
-    state: widget.state,
-    novelId: id,
-    bookmark: mark,
-    rangeContextResolver: (ranges, anchor) =>
-        loadOfflineReaderAnnotationContext(
-          state: widget.state,
-          repository: widget.repository,
-          novelId: id,
-          ranges: ranges,
-          anchor: anchor,
-          novel: _known(id),
-          locale: Localizations.maybeLocaleOf(context),
-        ),
-  );
+  Future<void> _showNote(int id, ReaderBookmark mark) async {
+    if (mark.note.isEmpty) {
+      await _edit(id, mark);
+      return;
+    }
+    await showReaderNote(
+      context,
+      mark.note,
+      reduceMotion: widget.state.reduceMotion,
+      title: '批注',
+      code: 'BOOKMARK / NOTE',
+      closeLabel: '关闭',
+      editLabel: '修改批注',
+      onEdit: () => _edit(id, mark),
+    );
+  }
+
+  Future<void> _edit(int id, ReaderBookmark mark) async {
+    if (mark.isImage) {
+      await showReaderImageAnnotationEditor(
+        context,
+        state: widget.state,
+        novelId: id,
+        bookmark: mark,
+      );
+      return;
+    }
+    await showReaderAnnotationEditor(
+      context,
+      state: widget.state,
+      novelId: id,
+      bookmark: mark,
+      rangeContextResolver: (ranges, anchor) =>
+          loadOfflineReaderAnnotationContext(
+            state: widget.state,
+            repository: widget.repository,
+            novelId: id,
+            ranges: ranges,
+            anchor: anchor,
+            novel: _known(id),
+            locale: Localizations.maybeLocaleOf(context),
+          ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) => ArchiveFeaturePage(
@@ -435,7 +466,7 @@ class _BookmarkLibraryPageState extends State<BookmarkLibraryPage>
                                 ),
                                 child: AppText(
                                   query.isEmpty
-                                      ? '长按正文选择喜欢的句子，点「书签」即可收藏。\n已有的位置书签也会显示在这里。'
+                                      ? '长按正文选择喜欢的句子，或点开插图后点「书签」，即可收藏。\n已有的位置书签也会显示在这里。'
                                       : widget.state.bookmarkEntries.any(
                                           (entry) => entry.bookmark.isUnderline,
                                         )
@@ -524,11 +555,18 @@ class _BookmarkLibraryPageState extends State<BookmarkLibraryPage>
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               if (mark.quote.isNotEmpty ||
-                                  mark.note.isNotEmpty) ...[
-                                ReaderBookmarkExcerpt(mark: mark),
+                                  mark.note.isNotEmpty ||
+                                  mark.imageUrl.isNotEmpty) ...[
+                                ReaderBookmarkExcerpt(
+                                  mark: mark,
+                                  onNoteTap: () =>
+                                      _showNote(entry.novelId, mark),
+                                ),
                                 const SizedBox(height: 20),
                               ],
-                              if (mark.quote.isEmpty && mark.note.isEmpty) ...[
+                              if (mark.quote.isEmpty &&
+                                  mark.note.isEmpty &&
+                                  mark.imageUrl.isEmpty) ...[
                                 AppText(
                                   mark.kindLabel,
                                   style: const TextStyle(

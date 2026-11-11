@@ -9,6 +9,7 @@ import 'library_state.dart';
 import 'reader_mark_style.dart';
 import 'reader_underline.dart';
 import 'reader_annotation_range.dart';
+import 'reader_bookmark_excerpt.dart';
 import 'reader_text_picker.dart';
 export 'reader_annotation_range.dart';
 
@@ -454,7 +455,15 @@ class _ReaderAnnotationEditorState extends State<ReaderAnnotationEditor> {
                 ),
               ],
             ),
-            if (_quote.isNotEmpty) ...[
+            if (widget.bookmark?.isImage == true) ...[
+              const SizedBox(height: 16),
+              ReaderBookmarkImage(
+                url: widget.bookmark!.imageUrl,
+                note: widget.bookmark!.annotation.imageNote,
+                noteX: widget.bookmark!.annotation.imageNoteX,
+                noteY: widget.bookmark!.annotation.imageNoteY,
+              ),
+            ] else if (_quote.isNotEmpty) ...[
               const SizedBox(height: 16),
               ConstrainedBox(
                 constraints: const BoxConstraints(maxHeight: 112),
@@ -478,11 +487,12 @@ class _ReaderAnnotationEditorState extends State<ReaderAnnotationEditor> {
               ),
             ],
             const SizedBox(height: 8),
-            GlassTextButton(
-              key: const ValueKey('annotation-adjust-range'),
-              onPressed: _saving || _selectingRange ? null : _adjustRange,
-              child: AppText(_selectingRange ? '正在载入原文…' : '调整原文范围'),
-            ),
+            if (widget.bookmark?.isImage != true)
+              GlassTextButton(
+                key: const ValueKey('annotation-adjust-range'),
+                onPressed: _saving || _selectingRange ? null : _adjustRange,
+                child: AppText(_selectingRange ? '正在载入原文…' : '调整原文范围'),
+              ),
             if (_rangeChange != null)
               const Padding(
                 padding: EdgeInsets.only(top: 6),
