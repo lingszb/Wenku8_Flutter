@@ -1492,6 +1492,9 @@ class _ReaderPagedViewState extends State<ReaderPagedView>
       fullWidthPages: fullWidthPages,
       imageInsets: padding,
       frameInsets: _effect == ReaderPageEffect.paper ? frameInsets : null,
+      contentInsets: _effect == ReaderPageEffect.paper
+          ? EdgeInsets.zero
+          : frameInsets,
       edgeOverflow: _effect == ReaderPageEffect.staggered && active
           ? (padding.left > padding.right ? padding.left : padding.right)
           : 0,
@@ -1512,9 +1515,7 @@ class _ReaderPagedViewState extends State<ReaderPagedView>
               Stack(
                 clipBehavior: Clip.none,
                 children: [
-                  Positioned.fill(
-                    child: Padding(padding: frameInsets, child: book),
-                  ),
+                  Positioned.fill(child: book),
                   Positioned.fill(
                     child: _furniture(
                       spread,

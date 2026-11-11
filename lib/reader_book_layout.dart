@@ -115,7 +115,8 @@ class ReaderBookSpread extends StatelessWidget {
     this.frameInsets,
     this.fullWidthPages = const {},
     this.imageInsets = EdgeInsets.zero,
-  });
+    this.contentInsets = EdgeInsets.zero,
+  }) : assert(contentInsets == EdgeInsets.zero || frameInsets == null);
   final ReaderBookLayout layout;
   final List<Widget> pages;
   final bool rightToLeft;
@@ -125,6 +126,10 @@ class ReaderBookSpread extends StatelessWidget {
   final EdgeInsets? frameInsets;
   final Set<int> fullWidthPages;
   final EdgeInsets imageInsets;
+
+  /// Extra space around the layout viewport that also participates in hit
+  /// testing for pages painted outside it. Only valid without [frameInsets].
+  final EdgeInsets contentInsets;
 
   Rect _pageRect(int index) {
     final physical = rightToLeft ? layout.count - 1 - index : index;
@@ -142,62 +147,74 @@ class ReaderBookSpread extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) => Stack(
-    clipBehavior: Clip.none,
-    children: [
-      if (layout.spine case final spine?)
-        Positioned.fromRect(
-          rect: frameInsets == null
-              ? spine
-              : Rect.fromLTWH(
-                  spine.left + frameInsets!.left,
-                  0,
-                  spine.width,
-                  layout.viewport.height + frameInsets!.vertical,
-                ),
-          child: IgnorePointer(
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    Colors.transparent,
-                    Theme.of(
-                      context,
-                    ).colorScheme.onSurface.withValues(alpha: .045),
-                    Colors.transparent,
-                  ],
+  Widget build(BuildContext context) {
+    final offset = Offset(contentInsets.left, contentInsets.top);
+    final spread = Stack(
+      clipBehavior: Clip.none,
+      children: [
+        if (layout.spine case final spine?)
+          Positioned.fromRect(
+            rect:
+                (frameInsets == null
+                        ? spine
+                        : Rect.fromLTWH(
+                            spine.left + frameInsets!.left,
+                            0,
+                            spine.width,
+                            layout.viewport.height + frameInsets!.vertical,
+                          ))
+                    .shift(offset),
+            child: IgnorePointer(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      Colors.transparent,
+                      Theme.of(
+                        context,
+                      ).colorScheme.onSurface.withValues(alpha: .045),
+                      Colors.transparent,
+                    ],
+                  ),
                 ),
               ),
             ),
           ),
-        ),
-      for (var index = 0; index < pages.length; index++)
-        Positioned.fromRect(
-          rect: _pageRect(index),
-          child: Semantics(
-            sortKey: OrdinalSortKey(index.toDouble()),
-            child: ClipRect(
-              clipBehavior: clipLeaves ? Clip.hardEdge : Clip.none,
-              clipper: edgeOverflow == 0 && verticalOverflow == 0
-                  ? null
-                  : _BookTurnClip(
-                      vertical: verticalOverflow,
-                      left:
-                          (rightToLeft ? layout.count - 1 - index : index) == 0
-                          ? edgeOverflow
-                          : 0,
-                      right:
-                          (rightToLeft ? layout.count - 1 - index : index) ==
-                              layout.count - 1
-                          ? edgeOverflow
-                          : 0,
-                    ),
-              child: pages[index],
+        for (var index = 0; index < pages.length; index++)
+          Positioned.fromRect(
+            rect: _pageRect(index).shift(offset),
+            child: Semantics(
+              sortKey: OrdinalSortKey(index.toDouble()),
+              child: ClipRect(
+                clipBehavior: clipLeaves ? Clip.hardEdge : Clip.none,
+                clipper: edgeOverflow == 0 && verticalOverflow == 0
+                    ? null
+                    : _BookTurnClip(
+                        vertical: verticalOverflow,
+                        left:
+                            (rightToLeft ? layout.count - 1 - index : index) ==
+                                0
+                            ? edgeOverflow
+                            : 0,
+                        right:
+                            (rightToLeft ? layout.count - 1 - index : index) ==
+                                layout.count - 1
+                            ? edgeOverflow
+                            : 0,
+                      ),
+                child: pages[index],
+              ),
             ),
           ),
-        ),
-    ],
-  );
+      ],
+    );
+    if (contentInsets == EdgeInsets.zero) return spread;
+    return SizedBox(
+      width: layout.viewport.width + contentInsets.horizontal,
+      height: layout.viewport.height + contentInsets.vertical,
+      child: spread,
+    );
+  }
 }
 
 class _BookTurnClip extends CustomClipper<Rect> {

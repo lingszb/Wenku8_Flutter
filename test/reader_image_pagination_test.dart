@@ -429,4 +429,53 @@ void main() {
       expect(vertical.pages.single.fragments.single.rect.top, 0);
     },
   );
+
+  testWidgets('expanded image leaves accept taps inside the side margins', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(400, 900);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final layout = ReaderBookLayout.resolve(
+      viewport: const Size(340, 700),
+      margin: 26,
+    );
+    var taps = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Center(
+          child: SizedBox(
+            key: const ValueKey('hit-viewport'),
+            width: 400,
+            height: 700,
+            child: ReaderBookSpread(
+              layout: layout,
+              fullWidthPages: const {0},
+              imageInsets: const EdgeInsets.only(left: 20, right: 40),
+              contentInsets: const EdgeInsets.only(left: 20, right: 40),
+              pages: [
+                GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => taps++,
+                  child: const SizedBox(key: ValueKey('margin-image')),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    expect(
+      tester.getRect(find.byKey(const ValueKey('margin-image'))),
+      tester.getRect(find.byKey(const ValueKey('hit-viewport'))),
+    );
+    final origin = tester.getTopLeft(
+      find.byKey(const ValueKey('hit-viewport')),
+    );
+    await tester.tapAt(origin + const Offset(5, 350));
+    await tester.tapAt(origin + const Offset(395, 350));
+    expect(taps, 2);
+    expect(tester.takeException(), isNull);
+  });
 }
