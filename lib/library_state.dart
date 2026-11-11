@@ -1142,12 +1142,13 @@ class LibraryState extends ChangeNotifier {
           });
     final annotations = <ReaderAnnotationRange>[
       for (final mark in styledMarks)
-        for (final range in mark.underlineRanges)
+        for (final (index, range) in mark.underlineRanges.indexed)
           ReaderAnnotationRange(
             range,
             mark.annotation.style,
             mark.annotation.color,
             bookmarkId: mark.id,
+            isLast: index == mark.underlineRanges.length - 1,
           ),
     ];
     final ranges =

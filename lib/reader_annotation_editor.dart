@@ -90,7 +90,6 @@ class ReaderAnnotationEditor extends StatefulWidget {
 
 class _ReaderAnnotationEditorState extends State<ReaderAnnotationEditor> {
   late final TextEditingController _note;
-  final _excerptScroll = ScrollController(debugLabel: 'annotation excerpt');
   final _excerptFocus = FocusNode(debugLabel: 'annotation excerpt selection');
   late ReaderMarkStyle _style;
   late ReaderMarkColor _color;
@@ -132,7 +131,6 @@ class _ReaderAnnotationEditorState extends State<ReaderAnnotationEditor> {
   @override
   void dispose() {
     _note.dispose();
-    _excerptScroll.dispose();
     _excerptFocus.dispose();
     super.dispose();
   }
@@ -434,184 +432,196 @@ class _ReaderAnnotationEditorState extends State<ReaderAnnotationEditor> {
       onPopInvokedWithResult: (didPop, _) {
         if (!didPop) _close();
       },
-      child: SingleChildScrollView(
-        key: const ValueKey('reader-annotation-scroll'),
-        padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: ArchiveSection(
-                    title: widget.bookmark == null ? '标记与批注' : '书签与批注',
-                    code: 'PERSONAL / ANNOTATION',
-                  ),
-                ),
-                GlassIconButton(
-                  icon: CupertinoIcons.xmark,
-                  label: '关闭批注',
-                  onPressed: _saving ? null : _close,
-                ),
-              ],
-            ),
-            if (widget.bookmark?.isImage == true) ...[
-              const SizedBox(height: 16),
-              ReaderBookmarkImage(
-                url: widget.bookmark!.imageUrl,
-                note: widget.bookmark!.annotation.imageNote,
-                noteX: widget.bookmark!.annotation.imageNoteX,
-                noteY: widget.bookmark!.annotation.imageNoteY,
-              ),
-            ] else if (_quote.isNotEmpty) ...[
-              const SizedBox(height: 16),
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxHeight: 112),
-                child: SingleChildScrollView(
-                  key: const ValueKey('reader-annotation-excerpt-scroll'),
-                  controller: _excerptScroll,
-                  primary: false,
-                  // A read-only excerpt has no editable caret to reveal when
-                  // delayed keyboard metrics arrive after its selection focus.
-                  child: SelectionArea(
-                    focusNode: _excerptFocus,
-                    child: Text(
-                      _quote,
-                      style: inputStyle.copyWith(
-                        height: 1.7,
-                        color: scheme.onSurfaceVariant,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Flexible(
+            child: SingleChildScrollView(
+              key: const ValueKey('reader-annotation-scroll'),
+              padding: const EdgeInsets.fromLTRB(24, 8, 24, 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ArchiveSection(
+                          title: widget.bookmark == null ? '标记与批注' : '书签与批注',
+                          code: 'PERSONAL / ANNOTATION',
+                        ),
                       ),
-                    ),
+                      GlassIconButton(
+                        icon: CupertinoIcons.xmark,
+                        label: '关闭批注',
+                        onPressed: _saving ? null : _close,
+                      ),
+                    ],
                   ),
-                ),
-              ),
-            ],
-            const SizedBox(height: 8),
-            if (widget.bookmark?.isImage != true)
-              GlassTextButton(
-                key: const ValueKey('annotation-adjust-range'),
-                onPressed: _saving || _selectingRange ? null : _adjustRange,
-                child: AppText(_selectingRange ? '正在载入原文…' : '调整原文范围'),
-              ),
-            if (_rangeChange != null)
-              const Padding(
-                padding: EdgeInsets.only(top: 6),
-                child: AppText(
-                  '范围将在保存后更新；隐藏文字和其他片段保持不变。',
-                  style: TextStyle(fontSize: 12, height: 1.6),
-                ),
-              ),
-            GlassChoiceGroup<ReaderMarkStyle>(
-              name: 'reader-mark-style',
-              label: '标记方式',
-              value: _style,
-              options: {
-                for (final style in [
-                  ReaderMarkStyle.none,
-                  ReaderMarkStyle.underline,
-                  ReaderMarkStyle.highlight,
-                  ReaderMarkStyle.outline,
-                ])
-                  style: style.label,
-              },
-              optionName: (style) => style.name,
-              enabled: !_saving && !_selectingRange,
-              onChanged: _selectStyle,
-            ),
-            GlassChoiceGroup<ReaderMarkColor>(
-              name: 'reader-mark-color',
-              label: '标记颜色',
-              value: _color,
-              options: {
-                for (final color in ReaderMarkColor.values) color: color.label,
-              },
-              optionName: (color) => color.name,
-              enabled: !_saving,
-              leading: (color) => Icon(
-                CupertinoIcons.circle_fill,
-                size: 12,
-                color: readerMarkInk(color, scheme.onSurface, dark: dark),
-              ),
-              onChanged: (value) => setState(() => _color = value),
-            ),
-            const SizedBox(height: 20),
-            const AppText(
-              '个人批注',
-              style: TextStyle(fontWeight: FontWeight.w600),
-            ),
-            const SizedBox(height: 10),
-            DefaultSelectionStyle.merge(
-              cursorColor: scheme.primary,
-              selectionColor: scheme.onSurface.withValues(
-                alpha: dark ? .20 : .18,
-              ),
-              child: DefaultTextStyle.merge(
-                textHeightBehavior: const TextHeightBehavior(),
-                child: DefaultTextHeightBehavior(
-                  textHeightBehavior: const TextHeightBehavior(),
-                  child: TextField(
-                    key: const ValueKey('reader-annotation-note'),
-                    controller: _note,
-                    enabled: !_saving,
-                    minLines: 5,
-                    maxLines: 12,
-                    maxLength: ReaderAnnotationData.maxNoteLength,
-                    textCapitalization: TextCapitalization.sentences,
-                    style: inputStyle,
-                    strutStyle: inputStrut,
-                    textAlignVertical: TextAlignVertical.top,
-                    // Paragraph leading is not part of the visible caret height.
-                    cursorHeight: MediaQuery.textScalerOf(
-                      context,
-                    ).scale(inputStyle.fontSize!),
-                    cursorColor: scheme.primary,
-                    keyboardAppearance: theme.brightness,
-                    decoration: InputDecoration(
-                      hint: Text(
-                        '记下此刻的理解，或慢慢写一段长文想法…',
+                  if (widget.bookmark?.isImage == true) ...[
+                    const SizedBox(height: 16),
+                    ReaderBookmarkImage(
+                      url: widget.bookmark!.imageUrl,
+                      note: widget.bookmark!.annotation.imageNote,
+                      noteX: widget.bookmark!.annotation.imageNoteX,
+                      noteY: widget.bookmark!.annotation.imageNoteY,
+                    ),
+                  ] else if (_quote.isNotEmpty) ...[
+                    const SizedBox(height: 16),
+                    // A capped excerpt keeps the actions visible on screen; the
+                    // range picker still shows the full source text.
+                    SelectionArea(
+                      focusNode: _excerptFocus,
+                      child: Text(
+                        _quote,
+                        maxLines: 4,
+                        overflow: TextOverflow.ellipsis,
                         style: inputStyle.copyWith(
+                          height: 1.7,
                           color: scheme.onSurfaceVariant,
                         ),
-                        strutStyle: inputStrut,
-                        textHeightBehavior: const TextHeightBehavior(),
                       ),
-                      contentPadding: const EdgeInsets.all(14),
-                      isDense: true,
-                      filled: true,
-                      fillColor: scheme.onSurface.withValues(alpha: .045),
-                      border: inputBorder,
-                      enabledBorder: inputBorder,
-                      focusedBorder: inputBorder,
-                      disabledBorder: inputBorder,
-                      counterText: '',
+                    ),
+                  ],
+                  const SizedBox(height: 8),
+                  if (widget.bookmark?.isImage != true)
+                    GlassTextButton(
+                      key: const ValueKey('annotation-adjust-range'),
+                      onPressed: _saving || _selectingRange
+                          ? null
+                          : _adjustRange,
+                      child: AppText(_selectingRange ? '正在载入原文…' : '调整原文范围'),
+                    ),
+                  if (_rangeChange != null)
+                    const Padding(
+                      padding: EdgeInsets.only(top: 6),
+                      child: AppText(
+                        '范围将在保存后更新；隐藏文字和其他片段保持不变。',
+                        style: TextStyle(fontSize: 12, height: 1.6),
+                      ),
+                    ),
+                  GlassChoiceGroup<ReaderMarkStyle>(
+                    name: 'reader-mark-style',
+                    label: '标记方式',
+                    value: _style,
+                    options: {
+                      for (final style in [
+                        ReaderMarkStyle.none,
+                        ReaderMarkStyle.underline,
+                        ReaderMarkStyle.highlight,
+                        ReaderMarkStyle.outline,
+                      ])
+                        style: style.label,
+                    },
+                    optionName: (style) => style.name,
+                    enabled: !_saving && !_selectingRange,
+                    onChanged: _selectStyle,
+                  ),
+                  GlassChoiceGroup<ReaderMarkColor>(
+                    name: 'reader-mark-color',
+                    label: '标记颜色',
+                    value: _color,
+                    options: {
+                      for (final color in ReaderMarkColor.values)
+                        color: color.label,
+                    },
+                    optionName: (color) => color.name,
+                    enabled: !_saving,
+                    leading: (color) => Icon(
+                      CupertinoIcons.circle_fill,
+                      size: 12,
+                      color: readerMarkInk(color, scheme.onSurface, dark: dark),
+                    ),
+                    onChanged: (value) => setState(() => _color = value),
+                  ),
+                  const SizedBox(height: 20),
+                  const AppText(
+                    '个人批注',
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 10),
+                  DefaultSelectionStyle.merge(
+                    cursorColor: scheme.primary,
+                    selectionColor: scheme.onSurface.withValues(
+                      alpha: dark ? .20 : .18,
+                    ),
+                    child: DefaultTextStyle.merge(
+                      textHeightBehavior: const TextHeightBehavior(),
+                      child: DefaultTextHeightBehavior(
+                        textHeightBehavior: const TextHeightBehavior(),
+                        child: TextField(
+                          key: const ValueKey('reader-annotation-note'),
+                          controller: _note,
+                          enabled: !_saving,
+                          minLines: 5,
+                          maxLines: 12,
+                          maxLength: ReaderAnnotationData.maxNoteLength,
+                          textCapitalization: TextCapitalization.sentences,
+                          style: inputStyle,
+                          strutStyle: inputStrut,
+                          textAlignVertical: TextAlignVertical.top,
+                          // Paragraph leading is not part of the visible caret height.
+                          cursorHeight: MediaQuery.textScalerOf(
+                            context,
+                          ).scale(inputStyle.fontSize!),
+                          cursorColor: scheme.primary,
+                          keyboardAppearance: theme.brightness,
+                          decoration: InputDecoration(
+                            hint: Text(
+                              '记下此刻的理解，或慢慢写一段长文想法…',
+                              style: inputStyle.copyWith(
+                                color: scheme.onSurfaceVariant,
+                              ),
+                              strutStyle: inputStrut,
+                              textHeightBehavior: const TextHeightBehavior(),
+                            ),
+                            contentPadding: const EdgeInsets.all(14),
+                            isDense: true,
+                            filled: true,
+                            fillColor: scheme.onSurface.withValues(alpha: .045),
+                            border: inputBorder,
+                            enabledBorder: inputBorder,
+                            focusedBorder: inputBorder,
+                            disabledBorder: inputBorder,
+                            counterText: '',
+                          ),
+                        ),
+                      ),
                     ),
                   ),
-                ),
+                  if (_error != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 12),
+                      child: AppText(
+                        _error!,
+                        style: TextStyle(color: scheme.error, height: 1.5),
+                      ),
+                    ),
+                ],
               ),
             ),
-            if (_error != null)
-              Padding(
-                padding: const EdgeInsets.only(top: 12),
-                child: AppText(
-                  _error!,
-                  style: TextStyle(color: scheme.error, height: 1.5),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                GlassPillButton(
+                  icon: CupertinoIcons.checkmark,
+                  label: _saving ? '正在保存…' : '保存到书签',
+                  onPressed: _saving ? null : _save,
                 ),
-              ),
-            const SizedBox(height: 18),
-            GlassPillButton(
-              icon: CupertinoIcons.checkmark,
-              label: _saving ? '正在保存…' : '保存到书签',
-              onPressed: _saving ? null : _save,
+                if (widget.bookmark != null) ...[
+                  const SizedBox(height: 8),
+                  GlassTextButton(
+                    onPressed: _saving ? null : _delete,
+                    child: const AppText('删除这条记录'),
+                  ),
+                ],
+              ],
             ),
-            if (widget.bookmark != null) ...[
-              const SizedBox(height: 8),
-              GlassTextButton(
-                onPressed: _saving ? null : _delete,
-                child: const AppText('删除这条记录'),
-              ),
-            ],
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

@@ -8572,7 +8572,9 @@ class _ReaderPageState extends State<ReaderPage>
             upper,
             annotation.style,
             annotation.color,
-            noteId: annotation.bookmarkId,
+            noteId: annotation.isLast && paragraph == range.endParagraph
+                ? annotation.bookmarkId
+                : '',
           ),
         );
       }

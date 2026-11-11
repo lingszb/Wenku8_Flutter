@@ -226,7 +226,7 @@ class RenderReaderAnnotationNotes extends RenderProxyBox
     final paragraph = _paragraph;
     if (paragraph == null || !paragraph.hasSize) return;
     final font = paragraph.text.style?.fontSize ?? 19;
-    final size = (_config.scaler.scale(font) * .66).clamp(10.0, 16.0);
+    final size = (_config.scaler.scale(font) * .58).clamp(9.5, 15.0);
     final origin = paragraph.localToGlobal(Offset.zero, ancestor: this);
     for (final mark in _config.marks) {
       if (mark.noteId.isEmpty || mark.end <= mark.start) continue;
@@ -239,12 +239,7 @@ class RenderReaderAnnotationNotes extends RenderProxyBox
       if (boxes.isEmpty) continue;
       final box = boxes.last.toRect().shift(origin);
       _badges.add((
-        rect: Rect.fromLTWH(
-          box.right - size * .34,
-          box.top + box.height * .05,
-          size,
-          size,
-        ),
+        rect: Rect.fromLTWH(box.right - size * .28, box.top - size, size, size),
         id: mark.noteId,
       ));
     }

@@ -220,123 +220,144 @@ class _ReaderImageAnnotationEditorState
       onPopInvokedWithResult: (didPop, _) {
         if (!didPop) _close();
       },
-      child: SingleChildScrollView(
-        key: const ValueKey('reader-image-annotation-scroll'),
-        padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                const Expanded(
-                  child: ArchiveSection(
-                    title: '图片批注',
-                    code: 'IMAGE / ANNOTATION',
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Flexible(
+            child: SingleChildScrollView(
+              key: const ValueKey('reader-image-annotation-scroll'),
+              padding: const EdgeInsets.fromLTRB(24, 8, 24, 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    children: [
+                      const Expanded(
+                        child: ArchiveSection(
+                          title: '图片批注',
+                          code: 'IMAGE / ANNOTATION',
+                        ),
+                      ),
+                      GlassIconButton(
+                        icon: CupertinoIcons.xmark,
+                        label: '关闭图片批注',
+                        onPressed: _saving ? null : _close,
+                      ),
+                    ],
                   ),
+                  const SizedBox(height: 16),
+                  ReaderBookmarkImage(
+                    key: const ValueKey('reader-image-annotation-preview'),
+                    url: _bookmark.imageUrl,
+                    height: 300,
+                    note: _note.text,
+                    noteX: _x,
+                    noteY: _y,
+                    onNoteMoved: (offset) => setState(() {
+                      _x = offset.dx;
+                      _y = offset.dy;
+                    }),
+                  ),
+                  const SizedBox(height: 10),
+                  AppText(
+                    _text.isEmpty
+                        ? '写下会出现在图片上的文字，保存后可以拖动位置。'
+                        : '按住图片上的文字即可拖动位置。',
+                    style: TextStyle(
+                      fontSize: 12,
+                      height: 1.6,
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  DefaultSelectionStyle.merge(
+                    cursorColor: scheme.primary,
+                    selectionColor: scheme.onSurface.withValues(alpha: .18),
+                    child: TextField(
+                      key: const ValueKey('reader-image-annotation-note'),
+                      controller: _note,
+                      enabled: !_saving,
+                      minLines: 2,
+                      maxLines: 5,
+                      maxLength: ReaderAnnotationData.maxImageNoteLength,
+                      inputFormatters: [
+                        LengthLimitingTextInputFormatter(
+                          ReaderAnnotationData.maxImageNoteLength,
+                        ),
+                      ],
+                      textCapitalization: TextCapitalization.sentences,
+                      style: inputStyle,
+                      keyboardAppearance: theme.brightness,
+                      decoration: InputDecoration(
+                        hint: Text(
+                          '写一句会显示在图片上的话…',
+                          style: inputStyle.copyWith(
+                            color: scheme.onSurfaceVariant,
+                          ),
+                        ),
+                        contentPadding: const EdgeInsets.all(14),
+                        isDense: true,
+                        filled: true,
+                        fillColor: scheme.onSurface.withValues(alpha: .045),
+                        border: inputBorder,
+                        enabledBorder: inputBorder,
+                        focusedBorder: inputBorder,
+                        disabledBorder: inputBorder,
+                        counterText: '',
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  GlassTextButton(
+                    key: const ValueKey('image-annotation-text-mode'),
+                    onPressed: _saving ? null : _openTextAnnotation,
+                    child: AppText(
+                      textNote.isEmpty
+                          ? '改用文本批注'
+                          : '文本批注 · 已写 ${textNote.length} 字',
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  AppText(
+                    '文本批注沿用摘录批注：可设置标记方式、颜色，并写长批注。',
+                    style: TextStyle(
+                      fontSize: 12,
+                      height: 1.6,
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                  if (_error != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 12),
+                      child: AppText(
+                        _error!,
+                        style: TextStyle(color: scheme.error, height: 1.5),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                GlassPillButton(
+                  icon: CupertinoIcons.checkmark,
+                  label: _saving ? '正在保存…' : '保存图片批注',
+                  onPressed: _saving ? null : _save,
                 ),
-                GlassIconButton(
-                  icon: CupertinoIcons.xmark,
-                  label: '关闭图片批注',
-                  onPressed: _saving ? null : _close,
+                const SizedBox(height: 8),
+                GlassTextButton(
+                  onPressed: _saving ? null : _delete,
+                  child: const AppText('删除这条记录'),
                 ),
               ],
             ),
-            const SizedBox(height: 16),
-            ReaderBookmarkImage(
-              key: const ValueKey('reader-image-annotation-preview'),
-              url: _bookmark.imageUrl,
-              height: 300,
-              note: _note.text,
-              noteX: _x,
-              noteY: _y,
-              onNoteMoved: (offset) => setState(() {
-                _x = offset.dx;
-                _y = offset.dy;
-              }),
-            ),
-            const SizedBox(height: 10),
-            AppText(
-              _text.isEmpty ? '写下会出现在图片上的文字，保存后可以拖动位置。' : '按住图片上的文字即可拖动位置。',
-              style: TextStyle(
-                fontSize: 12,
-                height: 1.6,
-                color: scheme.onSurfaceVariant,
-              ),
-            ),
-            const SizedBox(height: 16),
-            DefaultSelectionStyle.merge(
-              cursorColor: scheme.primary,
-              selectionColor: scheme.onSurface.withValues(alpha: .18),
-              child: TextField(
-                key: const ValueKey('reader-image-annotation-note'),
-                controller: _note,
-                enabled: !_saving,
-                minLines: 2,
-                maxLines: 5,
-                maxLength: ReaderAnnotationData.maxImageNoteLength,
-                inputFormatters: [
-                  LengthLimitingTextInputFormatter(
-                    ReaderAnnotationData.maxImageNoteLength,
-                  ),
-                ],
-                textCapitalization: TextCapitalization.sentences,
-                style: inputStyle,
-                keyboardAppearance: theme.brightness,
-                decoration: InputDecoration(
-                  hint: Text(
-                    '写一句会显示在图片上的话…',
-                    style: inputStyle.copyWith(color: scheme.onSurfaceVariant),
-                  ),
-                  contentPadding: const EdgeInsets.all(14),
-                  isDense: true,
-                  filled: true,
-                  fillColor: scheme.onSurface.withValues(alpha: .045),
-                  border: inputBorder,
-                  enabledBorder: inputBorder,
-                  focusedBorder: inputBorder,
-                  disabledBorder: inputBorder,
-                  counterText: '',
-                ),
-              ),
-            ),
-            const SizedBox(height: 8),
-            GlassTextButton(
-              key: const ValueKey('image-annotation-text-mode'),
-              onPressed: _saving ? null : _openTextAnnotation,
-              child: AppText(
-                textNote.isEmpty ? '改用文本批注' : '文本批注 · 已写 ${textNote.length} 字',
-              ),
-            ),
-            const SizedBox(height: 4),
-            AppText(
-              '文本批注沿用摘录批注：可设置标记方式、颜色，并写长批注。',
-              style: TextStyle(
-                fontSize: 12,
-                height: 1.6,
-                color: scheme.onSurfaceVariant,
-              ),
-            ),
-            if (_error != null)
-              Padding(
-                padding: const EdgeInsets.only(top: 12),
-                child: AppText(
-                  _error!,
-                  style: TextStyle(color: scheme.error, height: 1.5),
-                ),
-              ),
-            const SizedBox(height: 18),
-            GlassPillButton(
-              icon: CupertinoIcons.checkmark,
-              label: _saving ? '正在保存…' : '保存图片批注',
-              onPressed: _saving ? null : _save,
-            ),
-            const SizedBox(height: 8),
-            GlassTextButton(
-              onPressed: _saving ? null : _delete,
-              child: const AppText('删除这条记录'),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

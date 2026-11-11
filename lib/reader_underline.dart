@@ -162,6 +162,7 @@ class ReaderAnnotationRange {
     this.style,
     this.color, {
     this.bookmarkId = '',
+    this.isLast = true,
   });
   final ReaderUnderlineRange range;
   final ReaderMarkStyle style;
@@ -170,15 +171,19 @@ class ReaderAnnotationRange {
   /// The bookmark owning [range]; empty for synthetic render-only marks.
   final String bookmarkId;
 
+  /// True only for the range that ends the bookmark's whole selection.
+  final bool isLast;
+
   @override
   bool operator ==(Object other) =>
       other is ReaderAnnotationRange &&
       range == other.range &&
       style == other.style &&
       color == other.color &&
-      bookmarkId == other.bookmarkId;
+      bookmarkId == other.bookmarkId &&
+      isLast == other.isLast;
   @override
-  int get hashCode => Object.hash(range, style, color, bookmarkId);
+  int get hashCode => Object.hash(range, style, color, bookmarkId, isLast);
 }
 
 /// A saved range clipped to the currently materialized paragraph fragment.
