@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
@@ -41,7 +42,7 @@ class _IllustrationDecodes {
 class ReaderIllustrationCache {
   ReaderIllustrationCache({
     this.offlineReader,
-    this.maxBytes = 64 * 1024 * 1024,
+    this.maxBytes = 32 * 1024 * 1024,
   });
   static final shared = ReaderIllustrationCache();
 
@@ -99,13 +100,17 @@ class ReaderIllustrationCache {
     _IllustrationSource source,
   ) async {
     final size = await _size(bytes);
+    _rememberDimensions(url, size, source);
+    return size;
+  }
+
+  void _rememberDimensions(String url, Size size, _IllustrationSource source) {
     if (_current(url, source)) {
       if (_dimensions.length >= 256 && !_dimensions.containsKey(url)) {
         _dimensions.remove(_dimensions.keys.first);
       }
       _dimensions[url] = (size: size, source: source);
     }
-    return size;
   }
 
   /// Pagination needs header dimensions, not decoded pixels. Repeated note
@@ -124,11 +129,52 @@ class ReaderIllustrationCache {
     }
     final ordered = [...preferred, ...local];
     final result = <String, Size>{};
+    // Small chapters fit in one existing read batch. Large chapters overlap
+    // target bytes with metadata work instead of starting them after pagination.
+    if (ordered.length > 4 && preferred.isNotEmpty) {
+      final reads = LocalBookMedia.loadBatch(preferred);
+      for (final url in preferred) {
+        final request = _requestFor(
+          url,
+          input: reads[url],
+          retain: retainPriority,
+        );
+        unawaited(request.future.then<void>((_) {}, onError: (Object _) {}));
+      }
+    }
+    final missing = [
+      for (final url in ordered)
+        if (sizeOf(url) == null &&
+            peek(url) == null &&
+            _pendingFor(url) == null)
+          url,
+    ];
+    final headers = missing.length > 4
+        ? await LocalBookMedia.dimensions(missing, current: current)
+        : const <String, LocalBookImageDimensions>{};
+    if (!current()) return result;
+    // Revalidate after async work, then preserve known sizes before new hints
+    // rotate the bounded LRU. Large chapters need neither rereads nor stale
+    // dimensions when their source changes during the metadata request.
+    result.addAll({for (final url in ordered) url: ?sizeOf(url)});
+    for (final entry in headers.entries) {
+      final size = Size(
+        entry.value.width.toDouble(),
+        entry.value.height.toDouble(),
+      );
+      result[entry.key] = size;
+      _rememberDimensions(
+        entry.key,
+        size,
+        _IllustrationSource(_epoch, _revision(entry.key), retain: false),
+      );
+    }
     for (var start = 0; start < ordered.length && current(); start += 4) {
       final batch = ordered.skip(start).take(4).toList();
       final reads = LocalBookMedia.loadBatch([
         for (final url in batch)
-          if (sizeOf(url) == null &&
+          if (!result.containsKey(url) &&
+              sizeOf(url) == null &&
               peek(url) == null &&
               _pendingFor(url) == null)
             url,
@@ -141,6 +187,7 @@ class ReaderIllustrationCache {
       await Future.wait(
         batch.map((url) async {
           try {
+            if (result.containsKey(url)) return;
             if (sizeOf(url) case final size?) {
               result[url] = size;
               return;

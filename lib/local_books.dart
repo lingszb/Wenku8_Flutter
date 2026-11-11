@@ -1472,21 +1472,57 @@ Future<_ImportedFile> _importOriginal(_ImportJob job) async {
   LocalDocumentBuffer? buffer;
   try {
     final media = <String, String>{};
+    final imageDimensions = <String, LocalBookImageDimensions>{};
     late ImportedBook parsed;
     if (isEpub) {
       buffer = document?.open();
       final verifiedImages = <String>{};
+      final chapterImages = <int, Set<String>>{};
+      final imageHeavyChapters = <int>{};
+      final needsDimensions = <String>{};
+      void recordImages(int index, String body) {
+        if (!body.contains('wenku-local://')) return;
+        for (final paragraph in ReaderRichBody.decode(body).paragraphs) {
+          final url = readerIllustrationUrl(paragraph);
+          if (url == null) continue;
+          final uri = Uri.parse(url);
+          if (uri.scheme != 'wenku-local' || uri.host != '$id') continue;
+          final name = uri.path.substring(1);
+          if (!media.containsKey(name)) continue;
+          if (imageHeavyChapters.contains(index)) {
+            needsDimensions.add(name);
+          } else {
+            final names = chapterImages.putIfAbsent(index, () => <String>{})
+              ..add(name);
+            if (names.length > 4) {
+              needsDimensions.addAll(names);
+              chapterImages.remove(index);
+              imageHeavyChapters.add(index);
+            }
+          }
+        }
+      }
+
+      Uint8List inspectImage(ArchiveFile image) {
+        final bytes = readLocalBookArchiveEntry(image);
+        final size = localEpubImageHeaderDimensions(bytes);
+        if (size != null) imageDimensions[image.name] = size;
+        verifiedImages.add(image.name);
+        return bytes;
+      }
+
       final stream = buffer?.stream ?? InputMemoryStream(job.input!.bytes);
       final recovered = job.recoverDamagedEpub
           ? readLocalBookArchiveForRecovery(stream, maxSize: 1024 * 1024 * 1024)
           : null;
+      final archive =
+          recovered?.archive ??
+          readLocalBookArchive(stream, maxSize: 1024 * 1024 * 1024);
       parsed = _epub(
         LocalBookInput(job.name, Uint8List(0)),
         id,
         digest,
-        archive:
-            recovered?.archive ??
-            readLocalBookArchive(stream, maxSize: 1024 * 1024 * 1024),
+        archive: archive,
         damagedEntries: recovered?.damagedEntries,
         autoTitles: options.autoTitles,
         mergeUnlistedIllustrations: options.inlineEpubImages,
@@ -1494,26 +1530,48 @@ Future<_ImportedFile> _importOriginal(_ImportJob job) async {
           // Covers may already have been consumed before the spine reaches the
           // same image. Retain only verification state, not expanded images.
           if (!verifiedImages.contains(image.name)) {
-            readLocalBookArchiveEntry(image);
-            verifiedImages.add(image.name);
+            inspectImage(image);
           }
         },
-        saveBody: (index, body) =>
-            File('${staging.path}/c$index.txt').writeAsStringSync(body),
-        appendBody: (index, body) => File(
-          '${staging.path}/c$index.txt',
-        ).writeAsStringSync(body, mode: FileMode.append),
+        saveBody: (index, body) {
+          recordImages(index, body);
+          File('${staging.path}/c$index.txt').writeAsStringSync(body);
+        },
+        appendBody: (index, body) {
+          recordImages(index, body);
+          File(
+            '${staging.path}/c$index.txt',
+          ).writeAsStringSync(body, mode: FileMode.append);
+        },
         saveImage: (name, image) {
           media[name] = image.name;
           // Covers remain immediately readable for large book lists. All other
           // illustrations retain their original bytes in the single EPUB copy.
           if (name.startsWith('cover.')) {
-            final bytes = readLocalBookArchiveEntry(image);
-            verifiedImages.add(image.name);
+            final bytes = inspectImage(image);
             File('${staging.path}/$name').writeAsBytesSync(bytes);
           }
         },
       );
+      // Only image-heavy chapters use the bulk metadata path in the reader.
+      // Short image chapters and ordinary prose must not pay for scanning an
+      // entire book's illustrations at import time.
+      for (final name in needsDimensions) {
+        final path = media[name];
+        if (path == null ||
+            verifiedImages.contains(path) ||
+            !RegExp(r'\.(png|jpe?g)$').hasMatch(name)) {
+          continue;
+        }
+        final image = archive.findFile(path);
+        if (image == null) continue;
+        try {
+          inspectImage(image);
+        } on FormatException {
+          // Optional art keeps its old reader retry; required images were
+          // already checked by verifyImage during parsing above.
+        }
+      }
     } else if (isText &&
         (options.customToc || file != null && job.text == null)) {
       final suppliedText = job.input?.text ?? job.text;
@@ -1640,11 +1698,29 @@ Future<_ImportedFile> _importOriginal(_ImportJob job) async {
       }
     }
     if (media.isNotEmpty) {
-      final index = jsonEncode({
+      final indexValue = <String, dynamic>{
         'version': 1,
         'entries': media,
+        if (imageDimensions.isNotEmpty)
+          'dimensions': {
+            for (final entry in media.entries)
+              if (imageDimensions[entry.value] case final size?)
+                entry.key: [size.width, size.height],
+          },
+        if (imageDimensions.isNotEmpty) 'dimensionSource': digest,
+        if (imageDimensions.isNotEmpty && !direct)
+          'dimensionOriginalModified': File(
+            '${staging.path}/original',
+          ).lastModifiedSync().microsecondsSinceEpoch,
         if (parsed.damagedResources.isNotEmpty) 'recoverDamagedEpub': true,
-      });
+      };
+      var index = jsonEncode(indexValue);
+      if (utf8.encode(index).length > 1024 * 1024) {
+        indexValue.remove('dimensions');
+        indexValue.remove('dimensionSource');
+        indexValue.remove('dimensionOriginalModified');
+        index = jsonEncode(indexValue);
+      }
       if (utf8.encode(index).length > 1024 * 1024) {
         throw const FormatException('本地插图索引过大');
       }
@@ -2269,6 +2345,15 @@ class LocalBookStore extends ChangeNotifier
       ..addAll(loaded.sources);
     LocalBookMedia.root = directory;
     LocalBookMedia.importWarnings = this;
+    LocalBookMedia.externalDimensions = (id, names) => _withOriginalInput(
+      id,
+      (input) => compute(readLocalEpubImageDimensionsFromInput, (
+        directory: '${directory.path}/$id',
+        names: names,
+        original: input,
+        identity: _sources[id]?['digest'] as String? ?? '',
+      ), debugLabel: 'local-epub-dimensions'),
+    );
     LocalBookMedia.externalImage = (id, name) => _directOriginal(id)
         ? _withOriginalInput(
             id,

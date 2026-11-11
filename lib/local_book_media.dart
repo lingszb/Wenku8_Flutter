@@ -2,11 +2,13 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart' show compute, visibleForTesting;
+import 'package:flutter/services.dart' show PlatformException;
 import 'local_document_input.dart';
 import 'local_epub_media.dart';
 import 'local_book_import_issues.dart';
 
-export 'local_epub_media.dart' show LocalBookImageResult;
+export 'local_epub_media.dart'
+    show LocalBookImageResult, LocalBookImageDimensions;
 
 /// Portable, narrowly scoped references; imported books never access arbitrary
 /// file:// paths or send their illustration paths to the remote API.
@@ -28,6 +30,7 @@ class LocalBookMedia {
     _pending.clear();
     _coverBytes = 0;
     externalImages = null;
+    externalDimensions = null;
     importWarnings = null;
   }
 
@@ -43,6 +46,75 @@ class LocalBookMedia {
     List<String> names,
   )?
   externalImages;
+  static Future<Map<String, LocalBookImageDimensions>> Function(
+    int id,
+    List<String> names,
+  )?
+  externalDimensions;
+  static Future<void> _dimensionWork = Future<void>.value();
+
+  static Future<Map<String, LocalBookImageDimensions>> dimensions(
+    Iterable<String> sources, {
+    bool Function()? current,
+  }) async {
+    final directory = root;
+    final resolver = externalDimensions;
+    if (directory == null) return {};
+    final groups = <int, Map<String, String>>{};
+    for (final source in sources.toSet()) {
+      if (_pending.containsKey(source) || _covers.containsKey(source)) continue;
+      final uri = Uri.tryParse(source);
+      if (uri != null &&
+          valid(uri) &&
+          RegExp(r'\.(png|jpe?g)$').hasMatch(uri.path)) {
+        (groups[int.parse(uri.host)] ??= {})[uri.path.substring(1)] = source;
+      }
+    }
+    final result = <String, LocalBookImageDimensions>{};
+    for (final group in groups.entries) {
+      final names = group.value.keys.toList();
+      final revision = revisionOf(group.value.values.first);
+      try {
+        final operation = _dimensionWork.then((_) async {
+          if (directory != root ||
+              revision != revisionOf(group.value.values.first) ||
+              current?.call() == false) {
+            return <String, LocalBookImageDimensions>{};
+          }
+          return resolver == null
+              ? await compute(readLocalEpubImageDimensionsFromInput, (
+                  directory: '${directory.path}/${group.key}',
+                  names: names,
+                  original: LocalDocumentInput.file(
+                    '${directory.path}/${group.key}/original',
+                  ),
+                  identity: '',
+                ))
+              : await resolver(group.key, names);
+        });
+        _dimensionWork = operation.then<void>((_) {}, onError: (Object _) {});
+        final sizes = await operation;
+        if (directory != root ||
+            revision != revisionOf(group.value.values.first)) {
+          continue;
+        }
+        for (final entry in sizes.entries) {
+          if (group.value[entry.key] case final source?) {
+            result[source] = entry.value;
+          }
+        }
+      } on FileSystemException {
+        // Managed standalone images retain their existing codec path.
+      } on FormatException {
+        // Per-image requests own the existing corruption/retry feedback.
+      } on PlatformException {
+        // Revoked source grants retain per-image failure/retry, not a failed
+        // text chapter just because optional dimension hints were unavailable.
+      }
+    }
+    return result;
+  }
+
   static final _pending = <String, Future<Uint8List>>{};
   static const _maxCoverBytes = 8 * 1024 * 1024;
   static const _maxCoverEntries = 256;

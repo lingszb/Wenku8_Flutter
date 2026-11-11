@@ -1,4 +1,5 @@
 import 'dart:typed_data';
+import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
@@ -10,28 +11,32 @@ import 'package:wenku8_flutter/reader_paged_view.dart';
 import 'package:wenku8_flutter/reader_pagination.dart';
 import 'package:wenku8_flutter/reader_preferences.dart';
 import 'package:wenku8_flutter/reader_rich_content.dart';
+import 'package:wenku8_flutter/local_book_media.dart';
 
 const _first = 'wenku-local://1610612736/img-1.jpg';
 const _second = 'wenku-local://1610612736/img-2.jpg';
 
 String _image(String url) => '<!--image-->$url<!--image-->';
 
-Future<Uint8List> _pixels(WidgetTester tester) async =>
-    (await tester.runAsync(() async {
-      final recorder = ui.PictureRecorder();
-      Canvas(recorder).drawRect(
-        const Rect.fromLTWH(0, 0, 20, 30),
-        Paint()..color = Colors.pink,
-      );
-      final picture = recorder.endRecording();
-      final image = await picture.toImage(20, 30);
-      final bytes = (await image.toByteData(
-        format: ui.ImageByteFormat.png,
-      ))!.buffer.asUint8List();
-      image.dispose();
-      picture.dispose();
-      return bytes;
-    }))!;
+Future<Uint8List> _pixels(
+  WidgetTester tester, {
+  int width = 20,
+  int height = 30,
+}) async => (await tester.runAsync(() async {
+  final recorder = ui.PictureRecorder();
+  Canvas(recorder).drawRect(
+    Rect.fromLTWH(0, 0, width.toDouble(), height.toDouble()),
+    Paint()..color = Colors.pink,
+  );
+  final picture = recorder.endRecording();
+  final image = await picture.toImage(width, height);
+  final bytes = (await image.toByteData(
+    format: ui.ImageByteFormat.png,
+  ))!.buffer.asUint8List();
+  image.dispose();
+  picture.dispose();
+  return bytes;
+}))!;
 
 Future<ReaderPagination> _paginate(
   ReaderContent content, {
@@ -276,6 +281,65 @@ void main() {
     expect(reads, 3);
     expect(cache.encodedBytes, lessThanOrEqualTo(cache.maxBytes));
   });
+
+  testWidgets(
+    'large chapter metadata does not reread dimensions evicted mid-layout',
+    (tester) async {
+      final bytes = await _pixels(tester);
+      final changedBytes = await _pixels(tester, width: 40, height: 50);
+      var currentBytes = bytes;
+      final previousRoot = LocalBookMedia.root;
+      final previousReader = LocalBookMedia.externalImage;
+      final previousBatch = LocalBookMedia.externalImages;
+      final previousDimensions = LocalBookMedia.externalDimensions;
+      final previousWarnings = LocalBookMedia.importWarnings;
+      LocalBookMedia.root = Directory(
+        '.tmp/verification/dimension-window-unused',
+      );
+      var reads = 0;
+      LocalBookMedia.externalImage = (_, _) async {
+        reads++;
+        return currentBytes;
+      };
+      LocalBookMedia.externalDimensions = (_, names) async => {
+        for (final name in names) name: (width: 20, height: 30),
+      };
+      addTearDown(() {
+        LocalBookMedia.root = previousRoot;
+        LocalBookMedia.externalImage = previousReader;
+        LocalBookMedia.externalImages = previousBatch;
+        LocalBookMedia.externalDimensions = previousDimensions;
+        LocalBookMedia.importWarnings = previousWarnings;
+      });
+      final cache = ReaderIllustrationCache(maxBytes: 1);
+      final urls = [
+        for (var i = 0; i < 512; i++) 'wenku-local://1610612736/img-$i.png',
+      ];
+      await tester.runAsync(() async {
+        for (final url in urls.take(256)) {
+          await cache.dimensions(url);
+        }
+        reads = 0;
+        final sizes = await cache.measureLocalImages(urls, current: () => true);
+        expect(sizes, hasLength(512));
+        expect(sizes.values, everyElement(const Size(20, 30)));
+        expect(reads, 0);
+        expect(cache.encodedBytes, lessThanOrEqualTo(cache.maxBytes));
+        LocalBookMedia.externalDimensions = (_, names) async {
+          LocalBookMedia.evict(1610612736);
+          currentBytes = changedBytes;
+          return {for (final name in names) name: (width: 20, height: 30)};
+        };
+        reads = 0;
+        final replaced = await cache.measureLocalImages(
+          urls,
+          current: () => true,
+        );
+        expect(replaced.values, everyElement(const Size(40, 50)));
+        expect(reads, 512);
+      });
+    },
+  );
 
   test(
     'single-image comic page is vertically centered without resizing',
