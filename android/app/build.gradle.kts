@@ -85,6 +85,10 @@ android {
                 else -> error("Unsupported Flutter target platform: $platform")
             }
         }
+        // Native dependencies and CMake also use defaultConfig. Filtering only
+        // build types leaves unused ARM libraries inside x86_64 profile APKs.
+        defaultConfig.ndk.abiFilters.clear()
+        defaultConfig.ndk.abiFilters.addAll(targetAbis)
         buildTypes.configureEach {
             ndk.abiFilters.clear()
             ndk.abiFilters.addAll(targetAbis)
@@ -99,9 +103,6 @@ flutter {
 dependencies {
     implementation("com.github.albfernandez:juniversalchardet:2.0.4")
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs_nio:2.1.5")
-    implementation("org.jsoup:jsoup:1.23.2")
-    implementation("org.commonmark:commonmark:0.30.1")
-    implementation("com.tom-roush:pdfbox-android:2.0.27.0")
     // Keep the media host classes available to the app's shared-engine wiring.
     implementation("androidx.media:media:1.7.0")
 }

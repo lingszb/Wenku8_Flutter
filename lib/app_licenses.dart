@@ -37,10 +37,6 @@ void registerAppLicenses() {
       'libmobi · Bartek Fabiszewski',
     ], await rootBundle.loadString('assets/licenses/libmobi.txt'));
     for (final item in const {
-      'jsoup · Jonathan Hedley': 'jsoup',
-      'commonmark-java · Atlassian': 'commonmark',
-      'PDFBox Android · Apache Software Foundation / Tom Roush': 'pdfbox',
-      'PDFBox / FontBox notices': 'pdfbox-notice',
       'Apache POI HWPF and document dependencies': 'poi',
       'Bouncy Castle': 'bouncycastle',
       'OpenJDK desugaring · Oracle / Google': 'desugar-jdk',

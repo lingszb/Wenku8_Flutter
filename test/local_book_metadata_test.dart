@@ -5,6 +5,12 @@ import 'package:wenku8_flutter/offline_repository.dart';
 import 'package:wenku8_flutter/offline_cache.dart';
 import 'dart:io';
 import 'dart:typed_data';
+import 'dart:ui' as ui;
+import 'package:archive/archive.dart';
+import 'package:wenku8_flutter/local_epub_media.dart';
+import 'package:wenku8_flutter/local_document_input.dart';
+import 'package:wenku8_flutter/local_book_media.dart';
+import 'package:flutter/services.dart' show PlatformException;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -37,6 +43,253 @@ void main() {
   late Directory root;
   late LocalBookStore store;
   late Novel first;
+
+  test(
+    'optional dimension hints preserve revocation feedback and discard old source results',
+    () async {
+      final previousRoot = LocalBookMedia.root;
+      final previousReader = LocalBookMedia.externalImage;
+      final previousBatch = LocalBookMedia.externalImages;
+      final previousDimensions = LocalBookMedia.externalDimensions;
+      final previousWarnings = LocalBookMedia.importWarnings;
+      try {
+        LocalBookMedia.root = root;
+        const source = 'wenku-local://1610612736/img-1.png';
+        LocalBookMedia.externalDimensions = (_, _) async =>
+            throw PlatformException(code: 'permission_lost');
+        expect(await LocalBookMedia.dimensions([source]), isEmpty);
+        var calls = 0;
+        LocalBookMedia.externalDimensions = (_, _) async {
+          calls++;
+          return {'img-1.png': (width: 2, height: 3)};
+        };
+        expect(
+          await LocalBookMedia.dimensions([source], current: () => false),
+          isEmpty,
+        );
+        expect(calls, 0);
+        final started = Completer<void>();
+        final dimensions = Completer<Map<String, LocalBookImageDimensions>>();
+        LocalBookMedia.externalDimensions = (_, _) {
+          started.complete();
+          return dimensions.future;
+        };
+        final pending = LocalBookMedia.dimensions([source]);
+        await started.future;
+        LocalBookMedia.root = root;
+        dimensions.complete({'img-1.png': (width: 2, height: 3)});
+        expect(await pending, isEmpty);
+      } finally {
+        LocalBookMedia.root = previousRoot;
+        LocalBookMedia.externalImage = previousReader;
+        LocalBookMedia.externalImages = previousBatch;
+        LocalBookMedia.externalDimensions = previousDimensions;
+        LocalBookMedia.importWarnings = previousWarnings;
+      }
+    },
+  );
+
+  final image = base64Decode(
+    'iVBORw0KGgoAAAANSUhEUgAAAAIAAAADCAIAAAA2iEnWAAAAFElEQVR4nGOUD6hgYGBgYgADKAUAESAA7c/6xDcAAAAASUVORK5CYII=',
+  );
+  final jpeg = base64Decode(
+    '/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/2wBDAQkJCQwLDBgNDRgyIRwhMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjL/wAARCAADAAIDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAb/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFAEBAAAAAAAAAAAAAAAAAAAABf/EABQRAQAAAAAAAAAAAAAAAAAAAAD/2gAMAwEAAhEDEQA/AIUAyGf/2Q==',
+  );
+
+  test(
+    'EPUB dimension hints agree with codec and reject truncated/EXIF headers',
+    () async {
+      for (final bytes in [image, jpeg]) {
+        final buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
+        final descriptor = await ui.ImageDescriptor.encoded(buffer);
+        try {
+          expect(localEpubImageHeaderDimensions(bytes), (
+            width: descriptor.width,
+            height: descriptor.height,
+          ));
+          for (var length = 0; length < 24; length++) {
+            expect(
+              localEpubImageHeaderDimensions(
+                Uint8List.sublistView(bytes, 0, length),
+              ),
+              isNull,
+            );
+          }
+        } finally {
+          descriptor.dispose();
+          buffer.dispose();
+        }
+      }
+      final exif = Uint8List.fromList([
+        255,
+        216,
+        255,
+        225,
+        0,
+        8,
+        69,
+        120,
+        105,
+        102,
+        0,
+        0,
+        ...jpeg.skip(2),
+      ]);
+      expect(localEpubImageHeaderDimensions(exif), isNull);
+      expect(
+        localEpubImageHeaderDimensions(Uint8List.fromList([0, 1, 2])),
+        isNull,
+      );
+    },
+  );
+
+  test(
+    'EPUB dimensions cache rebuilds corruption and invalidates resource mapping',
+    () async {
+      final folder = Directory('${root.path}/image-dimensions')..createSync();
+      final archive = Archive()
+        ..addFile(ArchiveFile('a.png', image.length, image))
+        ..addFile(ArchiveFile('b.jpg', jpeg.length, jpeg));
+      final original = File('${folder.path}/original')
+        ..writeAsBytesSync(ZipEncoder().encode(archive));
+      final index = File('${folder.path}/media.json')
+        ..writeAsStringSync(
+          jsonEncode({
+            'version': 1,
+            'entries': {'img-1.png': 'a.png'},
+          }),
+        );
+      final request = (
+        directory: folder.path,
+        names: ['img-1.png'],
+        original: LocalDocumentInput.file(original.path),
+        identity: 'test-source',
+      );
+      expect(readLocalEpubImageDimensionsFromInput(request)['img-1.png'], (
+        width: 2,
+        height: 3,
+      ));
+      final cache = File('${folder.path}/.image-dimensions.json');
+      expect(cache.existsSync(), isTrue);
+      cache.writeAsStringSync('{truncated');
+      expect(readLocalEpubImageDimensionsFromInput(request)['img-1.png'], (
+        width: 2,
+        height: 3,
+      ));
+      index.writeAsStringSync(
+        jsonEncode({
+          'version': 1,
+          'entries': {'img-1.png': 'missing.png'},
+        }),
+      );
+      expect(readLocalEpubImageDimensionsFromInput(request), isEmpty);
+      index.writeAsStringSync(
+        jsonEncode({
+          'version': 1,
+          'entries': {'img-1.png': 'b.jpg'},
+        }),
+      );
+      expect(readLocalEpubImageDimensionsFromInput(request)['img-1.png'], (
+        width: 2,
+        height: 3,
+      ));
+      original.writeAsBytesSync([0, 1, 2, 3]);
+      expect(
+        () => readLocalEpubImageDimensionsFromInput(request),
+        throwsFormatException,
+      );
+    },
+  );
+
+  test(
+    'new EPUB import carries verified dimensions into the reader without a repair cache',
+    () async {
+      final archive = Archive();
+      final extraImages = [for (var i = 2; i <= 5; i++) 'b$i.jpg', 'bad.jpg'];
+      void text(String name, String value) {
+        final bytes = utf8.encode(value);
+        archive.addFile(ArchiveFile(name, bytes.length, bytes));
+      }
+
+      text('mimetype', 'application/epub+zip');
+      text(
+        'META-INF/container.xml',
+        '<container xmlns="urn:oasis:names:tc:opendocument:xmlns:container" version="1.0"><rootfiles><rootfile full-path="content.opf" media-type="application/oebps-package+xml"/></rootfiles></container>',
+      );
+      text(
+        'content.opf',
+        '<package xmlns="http://www.idpf.org/2007/opf" version="2.0" unique-identifier="book-id"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:identifier id="book-id">dimension-fixture</dc:identifier><dc:title>尺寸索引测试</dc:title><dc:language>zh-CN</dc:language></metadata><manifest><item id="body" href="chapter.xhtml" media-type="application/xhtml+xml"/><item id="a" href="a.png" media-type="image/png"/><item id="b" href="b.jpg" media-type="image/jpeg"/></manifest><spine><itemref idref="body"/></spine></package>'
+            .replaceFirst(
+              '</manifest>',
+              '${extraImages.map((name) => '<item id="$name" href="$name" media-type="image/jpeg"/>').join()}</manifest>',
+            ),
+      );
+      text(
+        'chapter.xhtml',
+        '<html xmlns="http://www.w3.org/1999/xhtml"><head><title>插图</title></head><body><p><img src="a.png"/></p><p><img src="b.jpg"/></p></body></html>'
+            .replaceFirst(
+              '</body>',
+              '${extraImages.map((name) => '<p><img src="$name"/></p>').join()}</body>',
+            ),
+      );
+      archive.addFile(ArchiveFile('a.png', image.length, image));
+      archive.addFile(ArchiveFile('b.jpg', jpeg.length, jpeg));
+      for (final name in extraImages) {
+        archive.addFile(
+          name == 'bad.jpg'
+              ? ArchiveFile.noCompress(name, jpeg.length, jpeg)
+              : ArchiveFile(name, jpeg.length, jpeg),
+        );
+      }
+      final epub = Uint8List.fromList(ZipEncoder().encode(archive));
+      final zip = ZipDirectory()..read(InputMemoryStream(epub));
+      final bad = zip.fileHeaders.firstWhere(
+        (entry) => entry.filename == 'bad.jpg',
+      );
+      final bytes = ByteData.sublistView(epub);
+      final payload =
+          bad.localHeaderOffset +
+          30 +
+          bytes.getUint16(bad.localHeaderOffset + 26, Endian.little) +
+          bytes.getUint16(bad.localHeaderOffset + 28, Endian.little);
+      epub[payload + jpeg.length - 1] ^= 1;
+      final book = await store.import(LocalBookInput('尺寸索引测试.epub', epub));
+      final folder = '${root.path}/${book.id}';
+      final index =
+          jsonDecode(File('$folder/media.json').readAsStringSync()) as Map;
+      final record =
+          jsonDecode(File('$folder/book.json').readAsStringSync()) as Map;
+      final name =
+          (index['entries'] as Map).entries
+                  .firstWhere((entry) => entry.value == 'b.jpg')
+                  .key
+              as String;
+      expect(index['dimensions'][name], [2, 3]);
+      expect(index['dimensionSource'], record['source']['digest']);
+      final result = readLocalEpubImageDimensionsFromInput((
+        directory: folder,
+        names: [name],
+        original: LocalDocumentInput.file('$folder/original'),
+        identity: record['source']['digest'] as String,
+      ));
+      expect(result[name], (width: 2, height: 3));
+      expect(File('$folder/.image-dimensions.json').existsSync(), isFalse);
+      final badName =
+          (index['entries'] as Map).entries
+                  .firstWhere((entry) => entry.value == 'bad.jpg')
+                  .key
+              as String;
+      expect(index['dimensions'][badName], isNull);
+      expect(
+        () => readLocalEpubImageFromFile((
+          directory: folder,
+          name: badName,
+          original: '$folder/original',
+        )),
+        throwsFormatException,
+      );
+    },
+  );
 
   setUp(() async {
     root = await Directory.systemTemp.createTemp('book-metadata-');

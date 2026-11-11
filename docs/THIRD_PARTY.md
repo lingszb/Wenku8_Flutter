@@ -32,7 +32,7 @@ MOBI 在本机重建为 EPUB 后使用现有阅读器，不访问转换服务，
 
 ### 文档导入
 
-Android 文档转换使用 [jsoup 1.23.2](https://jsoup.org/)（MIT，Jonathan Hedley）、[commonmark-java 0.30.1](https://github.com/commonmark/commonmark-java)（BSD-2-Clause，Atlassian）和 [PDFBox Android 2.0.27.0](https://github.com/TomRoush/PdfBox-Android)（Apache-2.0，Tom Roush / Apache Software Foundation）。PDFBox 的 Bouncy Castle 1.72 依赖遵循 MIT-style 许可。Android 旧版本兼容使用 Google 的 `desugar_jdk_libs_nio` 2.1.5（GPL-2.0 with Classpath Exception）。固定版本列于 `android/app/build.gradle.kts`，原文与 PDFBox / FontBox 声明保存在 `assets/licenses/` 并注册到应用许可页。FB2 / DOCX 的 SAX 转换与 RTF 正文导入为本工程实现。
+Android 原生文档转换入口当前未实现；原先仅用于该入口的 jsoup、commonmark-java 和 PDFBox Android 依赖已移除，应用继续使用现有 TXT / EPUB 导入、编码检测与错误反馈。Android 旧版本兼容使用 Google 的 `desugar_jdk_libs_nio` 2.1.5（GPL-2.0 with Classpath Exception），固定版本列于 `android/app/build.gradle.kts`。FB2 / DOCX 的 SAX 转换与 RTF 正文导入为本工程实现。
 
 OpenJDK 兼容库通过 Gradle 依赖引入，源码与构建脚本见 [google/desugar_jdk_libs](https://github.com/google/desugar_jdk_libs)。Classpath Exception 与原始许可随 `assets/licenses/` 保留。
 

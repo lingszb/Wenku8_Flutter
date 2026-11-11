@@ -31,6 +31,7 @@
 | --- | --- |
 | [2026-11-04 本地阅读移除](archive/2026-11-04-local-reader-removal.md) | 功能删除 checkpoints、当时设备验收与限制；不是现行 Git 提交流程 |
 | [2026-11-06 四季资产审计](archive/2026-11-06-seasonal-art-audit.md) | 修复前缺图、调用链、问答选择和实施过程；现行约定见 SEASONAL_ART.md |
+| [2026-11-11 EPUB 性能优化](archive/2026-11-11-epub-performance.md) | 图片密集型章节加载的实现、测量结果与未验证项；现行阅读器行为见 READER.md |
 
 ## 资产与 Agent 入口
 
