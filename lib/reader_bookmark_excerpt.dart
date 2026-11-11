@@ -1,4 +1,3 @@
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
 import 'app_ui.dart';
@@ -15,15 +14,11 @@ class ReaderBookmarkExcerpt extends StatelessWidget {
     this.quoteMaxLines = 5,
     this.noteMaxLines = 3,
     this.compact = false,
-    this.onNoteTap,
   });
 
   final ReaderBookmark mark;
   final int quoteMaxLines, noteMaxLines;
   final bool compact;
-
-  /// Opens the excerpt's note, or the editor when it has none.
-  final VoidCallback? onNoteTap;
 
   Widget _quote(BuildContext context) {
     final theme = Theme.of(context);
@@ -53,63 +48,12 @@ class ReaderBookmarkExcerpt extends StatelessWidget {
     );
   }
 
-  Widget _quoteText(BuildContext context, Color ink) {
-    final style = TextStyle(
-      fontSize: compact ? 15 : 16,
-      height: compact ? 1.5 : 1.8,
-    );
-    final onNoteTap = this.onNoteTap;
-    if (onNoteTap == null) {
-      return AppText(
-        mark.quote,
-        maxLines: quoteMaxLines,
-        overflow: TextOverflow.ellipsis,
-        style: style,
-      );
-    }
-    return Text.rich(
-      TextSpan(
-        text: appText(context, mark.quote),
-        children: [
-          WidgetSpan(
-            alignment: PlaceholderAlignment.middle,
-            child: Padding(
-              padding: const EdgeInsets.only(left: 4),
-              child: Semantics(
-                button: true,
-                label: mark.note.isEmpty ? '添加批注' : '查看批注',
-                child: JellyTapSurface(
-                  key: ValueKey('bookmark-note-entry-${mark.id}'),
-                  onTap: onNoteTap,
-                  child: Container(
-                    width: 18,
-                    height: 18,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: ink.withValues(
-                        alpha: mark.note.isEmpty ? .10 : .18,
-                      ),
-                      borderRadius: BorderRadius.circular(5),
-                    ),
-                    child: ArchiveIcon(
-                      mark.note.isEmpty
-                          ? CupertinoIcons.bookmark
-                          : CupertinoIcons.bookmark_fill,
-                      size: 12,
-                      color: ink,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-      maxLines: quoteMaxLines,
-      overflow: TextOverflow.ellipsis,
-      style: style,
-    );
-  }
+  Widget _quoteText(BuildContext context, Color ink) => AppText(
+    mark.quote,
+    maxLines: quoteMaxLines,
+    overflow: TextOverflow.ellipsis,
+    style: TextStyle(fontSize: compact ? 15 : 16, height: compact ? 1.5 : 1.8),
+  );
 
   Widget _heading(BuildContext context, String label, Color ink) => Row(
     children: [
@@ -298,8 +242,10 @@ class ReaderBookmarkImage extends StatelessWidget {
                               if (size.isEmpty) return;
                               onNoteMoved!(
                                 Offset(
-                                  (noteX + details.delta.dx / size.width)
-                                      .clamp(.06, .94),
+                                  (noteX + details.delta.dx / size.width).clamp(
+                                    .06,
+                                    .94,
+                                  ),
                                   (noteY + details.delta.dy / size.height)
                                       .clamp(.06, .94),
                                 ),

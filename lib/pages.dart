@@ -7425,6 +7425,7 @@ class _ReaderPageState extends State<ReaderPage>
         underlineChanges: widget.state.underlineChanges,
         annotations: () =>
             _annotationTextMarks(chapter, index, 0, paragraphs[index].length),
+        onAnnotationNoteTap: _openAnnotationNote,
         style: style,
         format: format,
         onNote: onNote,
@@ -7485,6 +7486,68 @@ class _ReaderPageState extends State<ReaderPage>
     } finally {
       _noteOpen = false;
       _listeningTarget = null;
+    }
+  }
+
+  /// Opens the saved excerpt note attached to a paragraph badge.
+  Future<void> _openAnnotationNote(String id) async {
+    final mark = widget.state
+        .bookmarksFor(widget.novel.id)
+        .where((mark) => mark.id == id)
+        .firstOrNull;
+    if (mark == null ||
+        _noteOpen ||
+        _toolsOpen ||
+        _catalogueOpen ||
+        _findOpen) {
+      return;
+    }
+    AppHaptics.play(context, HapticCue.action);
+    _noteOpen = true;
+    _selection.clear();
+    _stopAutoScroll();
+    _followTicket++;
+    _followScroll.cancel();
+    try {
+      if (mark.note.isEmpty) {
+        await _editTextAnnotation(mark);
+      } else {
+        await showReaderNote(
+          context,
+          mark.note,
+          reduceMotion: widget.state.reduceMotion,
+          surfaceWrapper: _readerSurface,
+          title: '批注',
+          code: 'READER / NOTE',
+          closeLabel: '关闭',
+          editLabel: '修改批注',
+          onEdit: () => _editTextAnnotation(mark),
+        );
+      }
+    } finally {
+      _noteOpen = false;
+      _listeningTarget = null;
+    }
+  }
+
+  Future<void> _editTextAnnotation(ReaderBookmark mark) async {
+    try {
+      await showReaderAnnotationEditor(
+        context,
+        state: widget.state,
+        novelId: widget.novel.id,
+        novel: _sourceBook,
+        bookmark: mark,
+        rangeContextResolver: _annotationRangeContext,
+        surfaceWrapper: _readerSurface,
+      );
+    } catch (error) {
+      if (mounted) {
+        showNovelFeedback(
+          context,
+          error is FormatException ? error.message : '批注暂时无法打开，请重试',
+        );
+      }
     }
   }
 
@@ -8143,6 +8206,7 @@ class _ReaderPageState extends State<ReaderPage>
               fragment.start,
               fragment.text.length,
             ),
+            onAnnotationNoteTap: _openAnnotationNote,
             style: style,
             format: content.formats[fragment.paragraph]?.slice(
               fragment.start,
@@ -8503,7 +8567,13 @@ class _ReaderPageState extends State<ReaderPage>
       final upper = (end - sourceStart).clamp(0, length);
       if (upper > lower) {
         result.add(
-          ReaderTextMark(lower, upper, annotation.style, annotation.color),
+          ReaderTextMark(
+            lower,
+            upper,
+            annotation.style,
+            annotation.color,
+            noteId: annotation.bookmarkId,
+          ),
         );
       }
     }

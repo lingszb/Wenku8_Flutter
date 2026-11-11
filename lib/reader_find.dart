@@ -280,6 +280,7 @@ class ReaderHighlightText extends StatelessWidget {
     this.underlineChanges,
     this.underlines,
     this.annotations,
+    this.onAnnotationNoteTap,
     this.continuesParagraph = false,
   });
   final int index;
@@ -295,6 +296,9 @@ class ReaderHighlightText extends StatelessWidget {
   final Listenable? underlineChanges;
   final List<TextRange> Function()? underlines;
   final List<ReaderTextMark> Function()? annotations;
+
+  /// Opens the saved annotation whose badge was tapped inside the paragraph.
+  final ValueChanged<String>? onAnnotationNoteTap;
 
   /// A paginated slice ends before its source paragraph's real final line.
   final bool continuesParagraph;
@@ -344,20 +348,23 @@ class ReaderHighlightText extends StatelessWidget {
     animation: Listenable.merge([match, ?underlineChanges]),
     builder: (context, _) {
       final selected = match.value;
-      final marked =
-          (annotations?.call() ??
-                  [
-                    for (final range
-                        in underlines?.call() ?? const <TextRange>[])
-                      ReaderTextMark(
-                        range.start,
-                        range.end,
-                        ReaderMarkStyle.underline,
-                        ReaderMarkColor.ink,
-                      ),
-                  ])
-              .where((mark) => mark.style != ReaderMarkStyle.none)
-              .toList();
+      final available =
+          annotations?.call() ??
+          [
+            for (final range in underlines?.call() ?? const <TextRange>[])
+              ReaderTextMark(
+                range.start,
+                range.end,
+                ReaderMarkStyle.underline,
+                ReaderMarkColor.ink,
+              ),
+          ];
+      final marked = available
+          .where((mark) => mark.style != ReaderMarkStyle.none)
+          .toList();
+      final notes = available
+          .where((mark) => mark.noteId.isNotEmpty && mark.end > mark.start)
+          .toList();
       final matching =
           selected != null &&
           (selected.chapter == null ||
@@ -432,7 +439,7 @@ class ReaderHighlightText extends StatelessWidget {
       final outlines = marked
           .where((mark) => mark.style == ReaderMarkStyle.outline)
           .toList();
-      return outlines.isEmpty
+      final rendered = outlines.isEmpty
           ? paragraph
           : ReaderAnnotationOutlines(
               marks: outlines,
@@ -442,6 +449,17 @@ class ReaderHighlightText extends StatelessWidget {
               prefix: indent ? readerIndentLength : 0,
               child: paragraph,
             );
+      final openNote = onAnnotationNoteTap;
+      if (notes.isEmpty || openNote == null) return rendered;
+      return ReaderAnnotationNotes(
+        marks: notes,
+        foreground: style.color ?? Theme.of(context).colorScheme.onSurface,
+        dark: Theme.of(context).brightness == Brightness.dark,
+        prefix: indent ? readerIndentLength : 0,
+        scaler: MediaQuery.textScalerOf(context),
+        onTap: openNote,
+        child: rendered,
+      );
     },
   );
 }

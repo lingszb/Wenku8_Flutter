@@ -64,19 +64,16 @@ class ReaderAnnotationData {
     updatedAt: value,
   );
 
-  ReaderAnnotationData withImageNote(
-    String text,
-    double x,
-    double y,
-  ) => ReaderAnnotationData(
-    style: style,
-    color: color,
-    note: note,
-    imageNote: text,
-    imageNoteX: x,
-    imageNoteY: y,
-    updatedAt: updatedAt,
-  );
+  ReaderAnnotationData withImageNote(String text, double x, double y) =>
+      ReaderAnnotationData(
+        style: style,
+        color: color,
+        note: note,
+        imageNote: text,
+        imageNoteX: x,
+        imageNoteY: y,
+        updatedAt: updatedAt,
+      );
 
   Map<String, Object> toJson() => {
     'style': style.name,
@@ -160,27 +157,56 @@ class ReaderAnnotationData {
 
 /// One indexed source range with its appearance, without font/layout state.
 class ReaderAnnotationRange {
-  const ReaderAnnotationRange(this.range, this.style, this.color);
+  const ReaderAnnotationRange(
+    this.range,
+    this.style,
+    this.color, {
+    this.bookmarkId = '',
+  });
   final ReaderUnderlineRange range;
   final ReaderMarkStyle style;
   final ReaderMarkColor color;
+
+  /// The bookmark owning [range]; empty for synthetic render-only marks.
+  final String bookmarkId;
 
   @override
   bool operator ==(Object other) =>
       other is ReaderAnnotationRange &&
       range == other.range &&
       style == other.style &&
-      color == other.color;
+      color == other.color &&
+      bookmarkId == other.bookmarkId;
   @override
-  int get hashCode => Object.hash(range, style, color);
+  int get hashCode => Object.hash(range, style, color, bookmarkId);
 }
 
 /// A saved range clipped to the currently materialized paragraph fragment.
 class ReaderTextMark {
-  const ReaderTextMark(this.start, this.end, this.style, this.color);
+  const ReaderTextMark(
+    this.start,
+    this.end,
+    this.style,
+    this.color, {
+    this.noteId = '',
+  });
   final int start, end;
   final ReaderMarkStyle style;
   final ReaderMarkColor color;
+
+  /// Opens this annotation when non-empty; render-only underlines leave it ''.
+  final String noteId;
+
+  @override
+  bool operator ==(Object other) =>
+      other is ReaderTextMark &&
+      start == other.start &&
+      end == other.end &&
+      style == other.style &&
+      color == other.color &&
+      noteId == other.noteId;
+  @override
+  int get hashCode => Object.hash(start, end, style, color, noteId);
 }
 
 /// An underline in original paragraph coordinates, independent of pagination.

@@ -1147,6 +1147,7 @@ class LibraryState extends ChangeNotifier {
             range,
             mark.annotation.style,
             mark.annotation.color,
+            bookmarkId: mark.id,
           ),
     ];
     final ranges =

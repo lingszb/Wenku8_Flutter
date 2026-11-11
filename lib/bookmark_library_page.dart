@@ -19,7 +19,6 @@ import 'reader_underline.dart';
 import 'reader_annotation_editor.dart';
 import 'reader_image_annotation_editor.dart';
 import 'reader_annotation_source.dart';
-import 'reader_annotations.dart';
 import 'reader_bookmark_excerpt.dart';
 import 'setting_menu.dart';
 
@@ -282,23 +281,6 @@ class _BookmarkLibraryPageState extends State<BookmarkLibraryPage>
     }
   }
 
-  Future<void> _showNote(int id, ReaderBookmark mark) async {
-    if (mark.note.isEmpty) {
-      await _edit(id, mark);
-      return;
-    }
-    await showReaderNote(
-      context,
-      mark.note,
-      reduceMotion: widget.state.reduceMotion,
-      title: '批注',
-      code: 'BOOKMARK / NOTE',
-      closeLabel: '关闭',
-      editLabel: '修改批注',
-      onEdit: () => _edit(id, mark),
-    );
-  }
-
   Future<void> _edit(int id, ReaderBookmark mark) async {
     if (mark.isImage) {
       await showReaderImageAnnotationEditor(
@@ -557,11 +539,7 @@ class _BookmarkLibraryPageState extends State<BookmarkLibraryPage>
                               if (mark.quote.isNotEmpty ||
                                   mark.note.isNotEmpty ||
                                   mark.imageUrl.isNotEmpty) ...[
-                                ReaderBookmarkExcerpt(
-                                  mark: mark,
-                                  onNoteTap: () =>
-                                      _showNote(entry.novelId, mark),
-                                ),
+                                ReaderBookmarkExcerpt(mark: mark),
                                 const SizedBox(height: 20),
                               ],
                               if (mark.quote.isEmpty &&
