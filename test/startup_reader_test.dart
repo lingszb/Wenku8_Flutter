@@ -99,6 +99,58 @@ void main() {
     expect(repository.directoryRequests, 1);
   }
 
+  for (final effect in [ReaderPageEffect.none, ReaderPageEffect.paper]) {
+    testWidgets('local image fills viewport width with ${effect.name} turns', (
+      tester,
+    ) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(400, 900);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final previousRoot = LocalBookMedia.root;
+      final previousReader = LocalBookMedia.externalImage;
+      final previousBatch = LocalBookMedia.externalImages;
+      final output = Directory('.tmp/verification')
+        ..createSync(recursive: true);
+      final root = output.createTempSync('full-width-epub-');
+      const url = 'wenku-local://1610612736/img-900.png';
+      final bytes = File('assets/report/season-spring.png').readAsBytesSync();
+      LocalBookMedia.root = root;
+      LocalBookMedia.externalImage = (_, _) async => bytes;
+      ReaderIllustrationCache.shared.clearMemory();
+      addTearDown(() {
+        ReaderIllustrationCache.shared.clearMemory();
+        LocalBookMedia.root = previousRoot;
+        LocalBookMedia.externalImage = previousReader;
+        LocalBookMedia.externalImages = previousBatch;
+        root.deleteSync(recursive: true);
+      });
+      await open(tester, mode: ReaderMode.paged);
+      await state.setReaderPreferences(
+        state.readerPreferencesFor(book.id).copyWith(pageEffect: effect),
+        persist: false,
+      );
+      repository.directory.complete(book.chapters.take(1).toList());
+      await tester.pumpAndSettle();
+      repository.text.complete('<!--image-->$url<!--image-->');
+      await tester.pump();
+      await tester.runAsync(() async {
+        await ReaderIllustrationCache.shared.dimensions(url);
+      });
+      await tester.pumpAndSettle();
+      final images = find.descendant(
+        of: find.byType(ReaderIllustration),
+        matching: find.byType(Image),
+      );
+      expect(images, findsOneWidget);
+      expect(tester.getRect(images).left, closeTo(0, .01));
+      expect(tester.getSize(images).width, closeTo(400, .01));
+      expect(tester.widget<Image>(images).fit, BoxFit.contain);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+  }
+
   testWidgets(
     'launch first frame is the cover, reader handoff never mounts home',
     (tester) async {

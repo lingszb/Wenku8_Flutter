@@ -7903,12 +7903,9 @@ class _ReaderPageState extends State<ReaderPage>
     // builders must keep its source, not consult the next chapter's state.
     final content = source ?? _currentContent!,
         chapterIndex = sourceChapter ?? _chapter;
-    if (page.fragments.length == 1 &&
-        page.fragments.first.image &&
-        readerIllustrationUrl(
-              page.fragments.first.text,
-            )?.startsWith('wenku-local:') !=
-            true) {
+    if (!page.vertical &&
+        page.fragments.length == 1 &&
+        page.fragments.first.image) {
       return ReaderTurnPart(
         bounds: page.fragments.first.rect,
         child: _paragraphContent(
