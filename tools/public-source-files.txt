@@ -5,6 +5,7 @@
 .agents/skills/flutter-ui-regression/SKILL.md
 .agents/skills/local-library-integrity/SKILL.md
 .agents/skills/reader-rendering/SKILL.md
+.agents/skills/run-wenku8/SKILL.md
 .agents/skills/source-boundary-audit/SKILL.md
 .githooks/pre-push
 .github/copilot-instructions.md
