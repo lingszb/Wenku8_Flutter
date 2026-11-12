@@ -24,6 +24,7 @@ import 'book_shelf_preferences.dart';
 import 'book_shelf_content_preferences.dart';
 import 'discovery_shelf_query.dart';
 import 'reader_underline.dart';
+import 'reader_content.dart' show validReaderIllustrationUrl;
 import 'reading_activity.dart';
 import 'reading_moments.dart';
 
@@ -425,6 +426,10 @@ Map<String, Object> _validateRecords(Map<String, dynamic> input) {
               (mark['quote'] != null &&
                   (mark['quote'] is! String ||
                       (mark['quote'] as String).length > 12000)) ||
+              (mark['image'] != null &&
+                  (mark['image'] is! String ||
+                      (mark['image'] as String).length > 2048 ||
+                      !validReaderIllustrationUrl(mark['image'] as String))) ||
               (mark['category'] != null &&
                   (mark['category'] is! String ||
                       (mark['category'] as String).length > 30)) ||

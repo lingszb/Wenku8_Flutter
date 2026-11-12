@@ -199,26 +199,42 @@ Future<void> showReaderNote(
   String text, {
   required bool reduceMotion,
   Widget Function(Widget)? surfaceWrapper,
-}) => showJellySheet<void>(
-  context: context,
-  reduceMotion: reduceMotion,
-  surfaceWrapper: surfaceWrapper,
-  builder: (sheet) => SingleChildScrollView(
-    padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        const ArchiveSection(title: '注释', code: 'READER / NOTE'),
-        const SizedBox(height: 18),
-        SelectionArea(
-          child: Text(text, style: const TextStyle(fontSize: 16, height: 1.8)),
-        ),
-        const SizedBox(height: 20),
-        GlassTextButton(
-          onPressed: () => Navigator.pop(sheet),
-          child: const AppText('回到正文'),
-        ),
-      ],
+  String title = '注释',
+  String code = 'READER / NOTE',
+  String closeLabel = '回到正文',
+  String? editLabel,
+  Future<void> Function()? onEdit,
+}) async {
+  final edit = await showJellySheet<bool>(
+    context: context,
+    reduceMotion: reduceMotion,
+    surfaceWrapper: surfaceWrapper,
+    builder: (sheet) => SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          ArchiveSection(title: title, code: code),
+          const SizedBox(height: 18),
+          SelectionArea(
+            child: Text(
+              text,
+              style: const TextStyle(fontSize: 16, height: 1.8),
+            ),
+          ),
+          const SizedBox(height: 20),
+          if (editLabel != null && onEdit != null)
+            GlassTextButton(
+              onPressed: () => Navigator.pop(sheet, true),
+              child: AppText(editLabel),
+            ),
+          GlassTextButton(
+            onPressed: () => Navigator.pop(sheet, false),
+            child: AppText(closeLabel),
+          ),
+        ],
+      ),
     ),
-  ),
-);
+  );
+  if (edit == true && onEdit != null) await onEdit();
+}

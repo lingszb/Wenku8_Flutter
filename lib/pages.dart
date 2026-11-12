@@ -100,6 +100,7 @@ import 'reader_find.dart';
 import 'reader_book_find.dart';
 import 'reader_annotations.dart';
 import 'reader_annotation_editor.dart';
+import 'reader_image_annotation_editor.dart';
 import 'reader_embedded_vertical.dart';
 import 'lan_reading_sync.dart';
 import 'lan_reading_page.dart';
@@ -7346,6 +7347,16 @@ class _ReaderPageState extends State<ReaderPage>
             ReaderIllustrationGallery(
               urls: source!.illustrations,
               initialUrl: url,
+              onBookmark: (imageUrl) {
+                final paragraph = source.paragraphs.indexWhere(
+                  (text) => readerIllustrationUrl(text) == imageUrl,
+                );
+                return _addIllustrationBookmark(
+                  imageUrl: imageUrl,
+                  chapter: chapter,
+                  paragraph: paragraph < 0 ? index : paragraph,
+                );
+              },
             ),
           ),
           slot: ReaderIllustrationGallery,
@@ -7414,6 +7425,7 @@ class _ReaderPageState extends State<ReaderPage>
         underlineChanges: widget.state.underlineChanges,
         annotations: () =>
             _annotationTextMarks(chapter, index, 0, paragraphs[index].length),
+        onAnnotationNoteTap: _openAnnotationNote,
         style: style,
         format: format,
         onNote: onNote,
@@ -7474,6 +7486,68 @@ class _ReaderPageState extends State<ReaderPage>
     } finally {
       _noteOpen = false;
       _listeningTarget = null;
+    }
+  }
+
+  /// Opens the saved excerpt note attached to a paragraph badge.
+  Future<void> _openAnnotationNote(String id) async {
+    final mark = widget.state
+        .bookmarksFor(widget.novel.id)
+        .where((mark) => mark.id == id)
+        .firstOrNull;
+    if (mark == null ||
+        _noteOpen ||
+        _toolsOpen ||
+        _catalogueOpen ||
+        _findOpen) {
+      return;
+    }
+    AppHaptics.play(context, HapticCue.action);
+    _noteOpen = true;
+    _selection.clear();
+    _stopAutoScroll();
+    _followTicket++;
+    _followScroll.cancel();
+    try {
+      if (mark.note.isEmpty) {
+        await _editTextAnnotation(mark);
+      } else {
+        await showReaderNote(
+          context,
+          mark.note,
+          reduceMotion: widget.state.reduceMotion,
+          surfaceWrapper: _readerSurface,
+          title: '批注',
+          code: 'READER / NOTE',
+          closeLabel: '关闭',
+          editLabel: '修改批注',
+          onEdit: () => _editTextAnnotation(mark),
+        );
+      }
+    } finally {
+      _noteOpen = false;
+      _listeningTarget = null;
+    }
+  }
+
+  Future<void> _editTextAnnotation(ReaderBookmark mark) async {
+    try {
+      await showReaderAnnotationEditor(
+        context,
+        state: widget.state,
+        novelId: widget.novel.id,
+        novel: _sourceBook,
+        bookmark: mark,
+        rangeContextResolver: _annotationRangeContext,
+        surfaceWrapper: _readerSurface,
+      );
+    } catch (error) {
+      if (mounted) {
+        showNovelFeedback(
+          context,
+          error is FormatException ? error.message : '批注暂时无法打开，请重试',
+        );
+      }
     }
   }
 
@@ -8129,6 +8203,7 @@ class _ReaderPageState extends State<ReaderPage>
               fragment.start,
               fragment.text.length,
             ),
+            onAnnotationNoteTap: _openAnnotationNote,
             style: style,
             format: content.formats[fragment.paragraph]?.slice(
               fragment.start,
@@ -8328,6 +8403,70 @@ class _ReaderPageState extends State<ReaderPage>
     );
   }
 
+  Future<bool?> _addIllustrationBookmark({
+    required String imageUrl,
+    required int chapter,
+    required int paragraph,
+  }) async {
+    if (chapter < 0 || chapter >= _sourceBook.chapters.length) return null;
+    final base =
+        _currentPosition(bookmark: true) ??
+        widget.state.positionFor(widget.novel.id);
+    if (base == null) return null;
+    final existing = widget.state
+        .bookmarksFor(_sourceBook.id)
+        .where(
+          (mark) =>
+              mark.isImage &&
+              mark.imageUrl == imageUrl &&
+              widget.state.chapterForPosition(_sourceBook, mark.position) ==
+                  chapter,
+        )
+        .firstOrNull;
+    if (existing != null) {
+      _openImageAnnotation(existing);
+      return false;
+    }
+    final position = ReadingPosition.fromJson({
+      ...base.toJson(),
+      'chapter': chapter,
+      'chapterId': _sourceBook.chapters[chapter].id,
+      'contentRevision': chapter == _chapter
+          ? _currentContent?.revision ?? ''
+          : base.contentRevision,
+      if (chapter != base.chapter) ...{
+        'offset': 0,
+        'fraction': 0,
+        'width': 0,
+        'layout': '',
+      },
+      'paragraphIndex': paragraph,
+      'textOffset': 0,
+      'paragraphFraction': 0,
+    });
+    final mark = await widget.state.addBookmark(
+      novel: _sourceBook,
+      position: position,
+      imageUrl: imageUrl,
+    );
+    if (mark != null) _openImageAnnotation(mark);
+    return mark != null;
+  }
+
+  /// Opens the picture-first annotation pad without holding up the gallery's
+  /// bookmark feedback; the editor stacks above the still-open gallery.
+  void _openImageAnnotation(ReaderBookmark mark) {
+    if (!mounted) return;
+    unawaited(
+      showReaderImageAnnotationEditor(
+        context,
+        state: widget.state,
+        novelId: _sourceBook.id,
+        bookmark: mark,
+      ),
+    );
+  }
+
   ReadingPosition? _quotePosition(ReaderQuoteSelection selected) {
     final position = _currentPosition(bookmark: true), anchor = selected.anchor;
     if (position == null || anchor == null) return null;
@@ -8425,7 +8564,15 @@ class _ReaderPageState extends State<ReaderPage>
       final upper = (end - sourceStart).clamp(0, length);
       if (upper > lower) {
         result.add(
-          ReaderTextMark(lower, upper, annotation.style, annotation.color),
+          ReaderTextMark(
+            lower,
+            upper,
+            annotation.style,
+            annotation.color,
+            noteId: annotation.isLast && paragraph == range.endParagraph
+                ? annotation.bookmarkId
+                : '',
+          ),
         );
       }
     }

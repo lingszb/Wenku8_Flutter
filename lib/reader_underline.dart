@@ -29,41 +29,84 @@ class ReaderAnnotationData {
     this.style = ReaderMarkStyle.underline,
     this.color = ReaderMarkColor.ink,
     this.note = '',
+    this.imageNote = '',
+    this.imageNoteX = .5,
+    this.imageNoteY = .82,
     this.updatedAt = 0,
   });
 
   static const maxNoteLength = 100000;
+  static const maxImageNoteLength = 2000;
   final ReaderMarkStyle style;
   final ReaderMarkColor color;
   final String note;
+
+  /// Text painted over an image excerpt; independent from the prose note.
+  final String imageNote;
+
+  /// Normalised position of [imageNote] inside the illustration.
+  final double imageNoteX, imageNoteY;
   final int updatedAt;
   bool get isEmpty =>
       (style == ReaderMarkStyle.underline || style == ReaderMarkStyle.none) &&
       color == ReaderMarkColor.ink &&
       note.isEmpty &&
+      imageNote.isEmpty &&
       updatedAt == 0;
 
   ReaderAnnotationData at(int value) => ReaderAnnotationData(
     style: style,
     color: color,
     note: note,
+    imageNote: imageNote,
+    imageNoteX: imageNoteX,
+    imageNoteY: imageNoteY,
     updatedAt: value,
   );
+
+  ReaderAnnotationData withImageNote(String text, double x, double y) =>
+      ReaderAnnotationData(
+        style: style,
+        color: color,
+        note: note,
+        imageNote: text,
+        imageNoteX: x,
+        imageNoteY: y,
+        updatedAt: updatedAt,
+      );
 
   Map<String, Object> toJson() => {
     'style': style.name,
     'color': color.name,
     if (note.isNotEmpty) 'note': note,
+    if (imageNote.isNotEmpty) ...{
+      'imageNote': imageNote,
+      'imageNoteX': imageNoteX,
+      'imageNoteY': imageNoteY,
+    },
     'updatedAt': updatedAt,
   };
 
   factory ReaderAnnotationData.fromJson(Object? raw) {
     if (raw == null) return const ReaderAnnotationData();
+    final imageNote = raw is Map ? raw['imageNote'] ?? '' : '';
+    final imageX = raw is Map ? raw['imageNoteX'] ?? .5 : .5;
+    final imageY = raw is Map ? raw['imageNoteY'] ?? .82 : .82;
     if (raw is! Map ||
         raw['style'] is! String ||
         raw['color'] is! String ||
         (raw['note'] != null && raw['note'] is! String) ||
         (raw['note'] as String? ?? '').length > maxNoteLength ||
+        imageNote is! String ||
+        imageNote.length > maxImageNoteLength ||
+        imageX is! num ||
+        !imageX.isFinite ||
+        imageX < 0 ||
+        imageX > 1 ||
+        imageY is! num ||
+        !imageY.isFinite ||
+        imageY < 0 ||
+        imageY > 1 ||
         raw['updatedAt'] is! int ||
         raw['updatedAt'] < 0 ||
         raw['updatedAt'] > 1000000000000000) {
@@ -82,6 +125,9 @@ class ReaderAnnotationData {
       style: style,
       color: color,
       note: raw['note'] as String? ?? '',
+      imageNote: imageNote,
+      imageNoteX: imageX.toDouble(),
+      imageNoteY: imageY.toDouble(),
       updatedAt: raw['updatedAt'] as int,
     );
   }
@@ -92,35 +138,80 @@ class ReaderAnnotationData {
       style == other.style &&
       color == other.color &&
       note == other.note &&
+      imageNote == other.imageNote &&
+      imageNoteX == other.imageNoteX &&
+      imageNoteY == other.imageNoteY &&
       updatedAt == other.updatedAt;
 
   @override
-  int get hashCode => Object.hash(style, color, note, updatedAt);
+  int get hashCode => Object.hash(
+    style,
+    color,
+    note,
+    imageNote,
+    imageNoteX,
+    imageNoteY,
+    updatedAt,
+  );
 }
 
 /// One indexed source range with its appearance, without font/layout state.
 class ReaderAnnotationRange {
-  const ReaderAnnotationRange(this.range, this.style, this.color);
+  const ReaderAnnotationRange(
+    this.range,
+    this.style,
+    this.color, {
+    this.bookmarkId = '',
+    this.isLast = true,
+  });
   final ReaderUnderlineRange range;
   final ReaderMarkStyle style;
   final ReaderMarkColor color;
+
+  /// The bookmark owning [range]; empty for synthetic render-only marks.
+  final String bookmarkId;
+
+  /// True only for the range that ends the bookmark's whole selection.
+  final bool isLast;
 
   @override
   bool operator ==(Object other) =>
       other is ReaderAnnotationRange &&
       range == other.range &&
       style == other.style &&
-      color == other.color;
+      color == other.color &&
+      bookmarkId == other.bookmarkId &&
+      isLast == other.isLast;
   @override
-  int get hashCode => Object.hash(range, style, color);
+  int get hashCode => Object.hash(range, style, color, bookmarkId, isLast);
 }
 
 /// A saved range clipped to the currently materialized paragraph fragment.
 class ReaderTextMark {
-  const ReaderTextMark(this.start, this.end, this.style, this.color);
+  const ReaderTextMark(
+    this.start,
+    this.end,
+    this.style,
+    this.color, {
+    this.noteId = '',
+  });
   final int start, end;
   final ReaderMarkStyle style;
   final ReaderMarkColor color;
+
+  /// Opens this annotation when non-empty; render-only underlines leave it ''.
+  final String noteId;
+
+  @override
+  bool operator ==(Object other) =>
+      other is ReaderTextMark &&
+      start == other.start &&
+      end == other.end &&
+      style == other.style &&
+      color == other.color &&
+      noteId == other.noteId;
+  @override
+  int get hashCode => Object.hash(start, end, style, color, noteId);
 }
 
 /// An underline in original paragraph coordinates, independent of pagination.

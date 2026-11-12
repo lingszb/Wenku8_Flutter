@@ -585,6 +585,7 @@ lib/reader_find.dart
 lib/reader_follow_scroll.dart
 lib/reader_handoff_navigation.dart
 lib/reader_illustrations.dart
+lib/reader_image_annotation_editor.dart
 lib/reader_landing_highlight.dart
 lib/reader_languages.dart
 lib/reader_line_reflow.dart
