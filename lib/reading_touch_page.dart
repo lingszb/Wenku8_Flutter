@@ -249,7 +249,7 @@ class _TouchRecordingSettings extends StatelessWidget {
           ),
           const Divider(height: 28),
           AppText(
-            '不受日期筛选，不保存轨迹、书名或正文，不随文库备份与同步。',
+            '不受日期筛选，不保存轨迹、书名或正文，不随纸间备份与同步。',
             style: TextStyle(color: muted, fontSize: 13, height: 1.6),
           ),
         ],

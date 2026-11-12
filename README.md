@@ -1,8 +1,11 @@
-# 轻小说文库 · 本地阅读版
+# 纸间 · 本地阅读
 
 [English](README_EN.md) · [项目文档](docs/README.md) · [Agent 项目规则](.agents/PROJECT_GUIDE.md) · [专项 Skill](.agents/skills/README.md)
 
-这是 [Wenku8 Flutter](https://github.com/mikufoxxx/Wenku8_Flutter) 的本地阅读 Fork，以 Android 为主要目标：导入自己的 TXT / EPUB，离线阅读、整理书库并听书。
+> [!NOTE]
+> **Fork 说明**：本仓库是 [Wenku8 Flutter](https://github.com/mikufoxxx/Wenku8_Flutter) 的独立 Fork。品牌与本地维护以「纸间」为准，独立发布与维护，不再跟随或接收上游仓库的更新；上游的新版本、标签与变更不会自动进入本项目。
+
+纸间以 Android 为主要目标：导入自己的 TXT / EPUB，离线阅读、整理书库并听书。
 
 > [!IMPORTANT]
 > 本项目是第三方阅读工具，与轻小说文库（Wenku8）无隶属关系，也不是其官方应用。应用不运营在线书库、不发布小说资源，安装包不附带任何书籍；小说、封面和插图的权利归各自权利人所有，请只导入和使用你有权访问的内容。

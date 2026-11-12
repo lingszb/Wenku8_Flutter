@@ -710,7 +710,7 @@ class _ReadingStatisticsPageState extends State<ReadingStatisticsPage>
         if (_hasCollection || _hasProgress || _hasMarks) ...[
           const SizedBox(height: 30),
           AppText(
-            '当前文库 · ${_now.year}.${_now.month}.${_now.day}',
+            '纸间 · ${_now.year}.${_now.month}.${_now.day}',
             style: _muted(context),
           ),
           const SizedBox(height: 16),

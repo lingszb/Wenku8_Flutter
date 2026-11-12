@@ -36,9 +36,9 @@ Debug 包名：`org.mewx.wenku8_flutter.source_preview`。CI Runner 使用临时
 3. 独立签名 job 从 `android-release` 环境获取证书，签名并验证包名、版本号、非 Debug 属性、ABI 和固定证书 SHA256。
 4. 发布签名 APK、`SHA256SUMS.txt`、公开证书指纹和 CHANGELOG 版本说明到当前 fork 的 GitHub Releases。已存在的 Release 不覆盖，失败重跑前应先查明原因。
 
-发行包名：`io.github.lingszb.wenku8.localreader`，名称“轻小说文库 · 本地阅读”。通过 Gradle 的 `wenkuForkDistribution` 属性隔离发行身份，不改变现有 Debug 预览包；签名独立于上游与 Debug。原生 MethodChannel、书籍数据和备份格式不改。发行包与预览包独立安装，迁移书库请使用应用备份/导入，不要卸载旧包清空数据。
+发行包名：`io.github.lingszb.wenku8.localreader`，名称“纸间 · 本地阅读”。通过 Gradle 的 `wenkuForkDistribution` 属性隔离发行身份，不改变现有 Debug 预览包；签名独立于上游与 Debug。原生 MethodChannel、书籍数据和备份格式不改。发行包与预览包独立安装，迁移书库请使用应用备份/导入，不要卸载旧包清空数据。
 
-更新默认来源已切换为 `lingszb/Wenku8_Flutter`，不再默认请求上游作者的更新镜像。APK 命名沿用更新器契约 `wenku8-<version>-arm64-v8a.apk`，校验文件另行记录构建身份。当前只交付 ARM64 APK，其他 ABI 不宣称已支持。
+更新来源固定为 fork 自身的 GitHub Releases `lingszb/Wenku8_Flutter`，不依赖上游仓库或任何镜像。APK 命名沿用更新器契约 `wenku8-<version>-arm64-v8a.apk`，校验文件另行记录构建身份。当前只交付 ARM64 APK，其他 ABI 不宣称已支持。
 
 ### 手动验证，不公开发布
 

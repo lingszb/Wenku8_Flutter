@@ -71,7 +71,7 @@ class DisplayRateInfo {
   /// An unmet request is not evidence of a specific OEM or thermal restriction.
   String? get requestNotice {
     if (!requestStatusAvailable) return null;
-    if (controllerActive == false) return '返回文库前台后恢复刷新率请求';
+    if (controllerActive == false) return '返回纸间前台后恢复刷新率请求';
     if (!_windowRequestMatches) return '正在向窗口提交刷新率请求';
     if (surfaceRequestState == 'failed') return '渲染表面的刷新率请求未成功，返回页面后重试';
     if (surfaceRequestState == 'waiting_for_surface' ||
@@ -82,7 +82,7 @@ class DisplayRateInfo {
         current != null &&
         requestedRate! > current! + .5 &&
         windowFocused == true) {
-      return '系统当前未采用请求的刷新率，可检查系统对文库的高刷新率设置';
+      return '系统当前未采用请求的刷新率，可检查系统对纸间的高刷新率设置';
     }
     return null;
   }

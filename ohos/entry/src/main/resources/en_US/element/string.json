@@ -2,15 +2,15 @@
   "string": [
     {
       "name": "module_desc",
-      "value": "轻小说文库"
+      "value": "纸间"
     },
     {
       "name": "EntryAbility_desc",
-      "value": "Light-novel reading and local library"
+      "value": "Zhijian reading and local library"
     },
     {
       "name": "EntryAbility_label",
-      "value": "轻小说文库"
+      "value": "纸间"
     }
   ]
 }
