@@ -13,7 +13,7 @@ flutter build apk --debug --target-platform android-x64
 flutter run -d <device-id>
 ```
 
-`android-x64` 为本机模拟器构建；真实 ARM64 设备应使用 `--target-platform android-arm64`，该目标本次未验收。调试包使用独立的 `org.mewx.wenku8_flutter.source_preview` applicationId。
+`android-x64` 为本机模拟器构建；真实 ARM64 设备应使用 `--target-platform android-arm64`，CI 会构建该目标的 Debug APK，设备运行验收另行记录。调试包使用独立的 `org.mewx.wenku8_flutter.source_preview` applicationId。
 
 ## 当前范围
 

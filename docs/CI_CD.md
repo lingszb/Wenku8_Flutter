@@ -15,6 +15,8 @@
 
 测试只覆盖当前已有的回归场景，不代表设备 E2E、性能或全部阅读行为已经自动化。新增公开测试需更新 `.gitignore` 的明确允许项与 `tools/public-source-files.txt`；清单登记的 `test/**/*_test.dart` 仍接受敏感内容检查。
 
+`pubspec.yaml`、`lib/updates/app_updates.dart` 的版本常量和 `CHANGELOG.md` 的版本章节必须同步修改；当前四项门禁不校验三者一致，普通 PR 只改其中一处仍可能通过，合并前需人工确认。
+
 构建使用 Ubuntu 24.04、JDK 17、Flutter 3.47.9、Android API 36、Build Tools 36、CMake 3.22.1。Gradle 8.14 华为镜像保留 SHA256 校验。本地其他 Maven 镜像不自动继承到 GitHub Runner。
 
 公开源码快照仍缺少三个受版本管理的 Wrapper 文件，CI 从固定 Flutter 模板恢复，不覆盖现有 Android 配置。本地新机器需同等准备 Wrapper。
@@ -23,7 +25,7 @@
 
 `Android APK build` 在 PR、master push 和手动运行时执行。Artifact 为 `local-reader-arm64-debug-<run_number>`，内含 APK 与校验值，保留 14 天。解压后安装，不能把 Artifact ZIP 当作 APK。
 
-Debug 包名：`org.mewx.wenku8_flutter.source_preview`。临时 Runner 的 Debug 证书可能变化，不能保证每次构建包之间能覆盖安装；不要通过直接卸载来处理有重要书库的数据。正式发行包使用下述独立身份。
+Debug 包名：`org.mewx.wenku8_flutter.source_preview`。CI Runner 使用临时 Debug 证书，与不同 Runner 或本机构建的签名不一致；签名不一致时 Android 只能先卸载再安装，`versionCode` 相同也不能覆盖。签名一致时，相同或更高 `versionCode` 可以覆盖安装，因此能否覆盖取决于签名，不是版本号。安装或卸载前先备份书库；不要为覆盖安装而卸载有重要书库的数据，也不要假设预览包一定可升级。正式发行包使用下述独立身份。
 
 ## 3. Release：构建 → 签名 → 发布
 
@@ -50,7 +52,7 @@ gh workflow run fork-release.yml --repo lingszb/Wenku8_Flutter --ref master
 
 ### 正式发版
 
-在功能分支同步更新 `pubspec.yaml`、`lib/updates/app_updates.dart` 的版本常量、`CHANGELOG.md` 的对应版本说明，经过四项门禁合并；Android build number 必须递增。随后从最新 master 创建版本 Tag：
+在功能分支同步更新 `pubspec.yaml`、`lib/updates/app_updates.dart` 的版本常量、`CHANGELOG.md` 的对应版本说明，经过四项门禁合并；Android build number 必须递增。普通功能 PR 不递增版本，预览 / Debug 包沿用当前版本号，不能作为发版标识。随后从最新 master 创建版本 Tag：
 
 ```powershell
 git switch master
