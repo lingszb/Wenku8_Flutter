@@ -846,7 +846,7 @@ class _QuoteCardPageState extends State<QuoteCardPage> {
       );
       if (!mounted) return;
       final name =
-          '文库摘录-${DateTime.now().millisecondsSinceEpoch}-${_page + 1}.png';
+          '纸间摘录-${DateTime.now().millisecondsSinceEpoch}-${_page + 1}.png';
       if (share) {
         await LocalPlatform.shareImage(bytes, name);
       } else {

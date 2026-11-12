@@ -1,4 +1,4 @@
-const currentReleaseSourcePolicy = '本构建提供本地书籍导入与阅读，已移除文库账号、在线书库和文库云书架功能。';
+const currentReleaseSourcePolicy = '本应用提供本地书籍导入与阅读，不包含在线账号、云书架或在线书库功能。';
 
 const projectFreeNotice = '''**免费使用与公开源码**
 
@@ -6,7 +6,7 @@ const projectFreeNotice = '''**免费使用与公开源码**
 
 const projectContentNotice = '''**内容来源与项目身份**
 
-本构建提供本地阅读界面与书籍管理，并非轻小说文库网站的官方应用。不连接文库在线书库，不发布小说资源。本地书籍由用户自行合法导入，安装包不附带小说文件；已有历史缓存仅从本机读取。''';
+纸间是一款独立的本地阅读应用，提供阅读界面与书籍管理，不连接任何在线书库，不发布小说资源。本地书籍由用户自行合法导入，安装包不附带小说文件；已有历史缓存仅从本机读取。''';
 
 const projectRightsNotice = '''**版权与使用提醒**
 

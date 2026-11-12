@@ -140,7 +140,7 @@ BookSyncBundle decodeBookSync(Uint8List bytes) {
       ![1, 2].contains(manifest['version']) ||
       manifest['books'] is! List ||
       manifest['books'].length > 200) {
-    throw const FormatException('请选择文库生成的 .wenku8sync 同步文件');
+    throw const FormatException('请选择纸间生成的 .wenku8sync 同步文件');
   }
   final books = <LocalBookInput>[];
   final paths = <String>{};
@@ -461,7 +461,7 @@ class BookSync extends ChangeNotifier {
         remote = incoming;
         await _merge(incoming);
       } else if (selectedConnection['created'] != true) {
-        throw const FormatException('所选文件为空，请新建文库同步文件');
+        throw const FormatException('所选文件为空，请新建纸间同步文件');
       }
       status = '正在合并书籍与阅读记录';
       _notify();

@@ -6,7 +6,7 @@ on:
       tag:
         description: Reviewed draft tag
         required: true
-        default: v0.5.6
+        default: v0.1.0
         type: string
 
 permissions:
@@ -18,7 +18,7 @@ concurrency:
 
 jobs:
   sign:
-    if: github.repository == 'mikufoxxx/Wenku8_Flutter' && github.actor == github.repository_owner
+    if: github.repository == 'lingszb/Wenku8_Flutter' && github.actor == github.repository_owner
     runs-on: ubuntu-latest
     permissions:
       contents: write

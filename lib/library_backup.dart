@@ -165,7 +165,7 @@ LibraryBackup _decodeBackup(String text) {
       raw['createdAt'] is! int ||
       raw['createdAt'] < 0 ||
       raw['records'] is! Map) {
-    throw const FormatException('不是受支持的文库备份文件');
+    throw const FormatException('不是受支持的纸间备份文件');
   }
   return LibraryBackup._(
     raw['createdAt'],

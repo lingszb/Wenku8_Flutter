@@ -3243,7 +3243,7 @@ class SettingsPage extends StatelessWidget {
       const SizedBox(height: 14),
       FeatureEntry(
         key: const ValueKey('settings-legacy-import'),
-        title: '导入旧版文库记录',
+        title: '导入旧版记录',
         icon: CupertinoIcons.folder_badge_plus,
         subtitle: '预览后合并，保留较新的阅读进度',
         onTap: () => pushNovelPage<void>(

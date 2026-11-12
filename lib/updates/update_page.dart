@@ -344,7 +344,7 @@ class _AppUpdatePromptRoute extends PopupRoute<bool>
                                 ),
                                 const SizedBox(height: 6),
                                 AppText(
-                                  '轻小说文库 ${release.version.name}',
+                                  '纸间 ${release.version.name}',
                                   style: TextStyle(
                                     color: Theme.of(
                                       context,
@@ -455,7 +455,7 @@ class AppUpdatePage extends StatelessWidget {
               onPressed: () => Navigator.pop(context),
             ),
             title: const ArchiveRouteTitle(
-              title: '关于轻小说文库',
+              title: '关于纸间',
               code: 'SYSTEM / ABOUT',
             ),
           ),
@@ -468,7 +468,7 @@ class AppUpdatePage extends StatelessWidget {
               padding.bottom + 32,
             ),
             children: [
-              const ArchiveSection(title: '轻小说文库', code: 'WENKU8 / FLUTTER'),
+              const ArchiveSection(title: '纸间', code: 'ZHIJIAN / LOCAL'),
               const SizedBox(height: 12),
               AppText(
                 '当前版本 $version · 构建 $build',
@@ -633,10 +633,10 @@ class AppUpdatePage extends StatelessWidget {
                       key: const ValueKey('app-open-source-licenses'),
                       onPressed: () => showLicensePage(
                         context: context,
-                        applicationName: '轻小说文库',
+                        applicationName: '纸间',
                         applicationVersion: currentAppVersion,
                         applicationLegalese:
-                            'Copyright © 2026 Wenku8 Flutter contributors',
+                            'Copyright © 2026 Zhijian contributors',
                       ),
                       child: const AppText('开源许可与字体授权'),
                     ),

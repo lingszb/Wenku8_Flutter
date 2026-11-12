@@ -1,8 +1,11 @@
-# Wenku8 Flutter · Local Reader
+# Zhijian · Local Reader
 
 [简体中文](README.md) · [Documentation index](docs/README.md) · [Agent project guide](.agents/PROJECT_GUIDE.md) · [Project skills](.agents/skills/README.md)
 
-A local-reading fork of [Wenku8 Flutter](https://github.com/mikufoxxx/Wenku8_Flutter), targeting Android: import your own TXT / EPUB books, read offline, organize a local library, and listen to text-to-speech.
+> [!NOTE]
+> **Fork notice**: This repository is an independent fork of [Wenku8 Flutter](https://github.com/mikufoxxx/Wenku8_Flutter). The brand and local maintenance follow **Zhijian**; this fork is maintained and released independently and no longer receives or tracks upstream repository updates. Upstream releases, tags and changes do not enter this project automatically.
+
+Zhijian targets Android: import your own TXT / EPUB books, read offline, organize a local library, and listen to text-to-speech.
 
 > [!IMPORTANT]
 > This is a third-party reading tool. It is not affiliated with Wenku8 and is not its official app. The app does not operate an online library, publish novels, or bundle any book files. Novels, covers and illustrations remain the property of their respective rights holders; import only content you are entitled to use.

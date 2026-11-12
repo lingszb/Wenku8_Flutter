@@ -307,7 +307,7 @@ class LibrarySkeleton extends StatelessWidget {
   final BookGridDensity gridDensity;
   @override
   Widget build(BuildContext context) => Semantics(
-    label: '正在翻开文库',
+    label: '正在翻开纸间',
     liveRegion: true,
     container: true,
     explicitChildNodes: true,

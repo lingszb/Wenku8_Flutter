@@ -875,7 +875,7 @@ class ReaderIllustrationGallery extends StatefulWidget {
     required this.initialUrl,
     this.cache,
     this.title = '章节插图',
-    this.fileNamePrefix = '文库插图',
+    this.fileNamePrefix = '纸间插图',
     this.onBookmark,
   }) : assert(urls.length > 0);
   final List<String> urls;

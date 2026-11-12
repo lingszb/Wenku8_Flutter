@@ -7,9 +7,8 @@ class ReleaseSection {
 }
 
 const releaseFreeNotice = '**本项目完全免费，请勿购买所谓付费版、激活码或解锁服务。**';
-const releaseSponsorLink = '☕ [请我喝杯咖啡 · 爱发电](https://afdian.com/a/mikufoxxx)';
 const releaseProjectNotice =
-    '本构建以本地阅读为主，并非轻小说文库（Wenku8）官方应用。本地书籍由用户自行导入，安装包不附带小说文件。';
+    '纸间是一款本地优先的独立阅读应用，不连接任何在线书库。本地书籍由用户自行导入，安装包不附带小说文件。';
 const releaseRightsNotice =
     '小说、封面和插图归各自权利人所有。请仅使用有权访问的内容，遵守来源网站规则，不得绕过访问限制、破解 DRM，或未经许可传播、出售内容。';
 const releaseReadingNotice = '**书籍目录、正文、封面和插图从本地导入文件或已有历史缓存读取。**';
@@ -29,8 +28,6 @@ const publicReleaseNotes =
 ### 免费使用，请勿付费
 
 $releaseFreeNotice
-
-$releaseSponsorLink
 
 $releaseProjectNotice
 
@@ -63,7 +60,6 @@ $_backup
 const currentReleaseNotes = publicReleaseNotes;
 const currentReleaseSummary = [
   releaseFreeNotice,
-  releaseSponsorLink,
   releaseReadingNotice,
   currentReleaseSourcePolicy,
   ..._changes,
@@ -72,7 +68,6 @@ const currentReleaseSummary = [
 const currentReleaseSections = [
   ReleaseSection('重要说明 · 请务必阅读', [
     releaseFreeNotice,
-    releaseSponsorLink,
     releaseProjectNotice,
     releaseRightsNotice,
     releaseReadingNotice,
