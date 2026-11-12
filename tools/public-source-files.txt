@@ -10,7 +10,6 @@
 .github/copilot-instructions.md
 .github/workflows/android-apk.yml
 .github/workflows/flutter-ci.yml
-.github/workflows/sign-distribution.yml
 .gitignore
 CHANGELOG.md
 LICENSE
@@ -1010,7 +1009,6 @@ tools/check_public_source.py
 tools/export_public_source.py
 tools/prepare_release.py
 tools/public-source-files.txt
-tools/sign_distribution.py
 test/book_search_test.dart
 .github/workflows/fork-release.yml
 tools/sign_fork_release.py
