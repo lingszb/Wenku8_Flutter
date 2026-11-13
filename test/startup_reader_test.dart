@@ -155,15 +155,26 @@ void main() {
         tester.widget<ReaderIllustration>(illustration).onLongPress,
         isNotNull,
       );
+      // Target the actual gesture surface, not Image's transient render
+      // subtree: the engine can still be decoding and showing a skeleton.
+      final target = find.descendant(
+        of: illustration,
+        matching: find.byWidgetPredicate(
+          (widget) => widget is GestureDetector && widget.onLongPress != null,
+        ),
+      );
+      expect(target.hitTestable(), findsOneWidget);
       final chromeWasVisible = state.readerChromeVisible;
-      await tester.tap(images);
+      await tester.tap(target);
       await tester.pumpAndSettle();
       expect(find.byType(ReaderIllustrationGallery), findsNothing);
       expect(state.readerChromeVisible, !chromeWasVisible);
-      await tester.tap(images);
+      expect(target.hitTestable(), findsOneWidget);
+      await tester.tap(target);
       await tester.pumpAndSettle();
       expect(state.readerChromeVisible, chromeWasVisible);
-      await tester.longPress(images);
+      expect(target.hitTestable(), findsOneWidget);
+      await tester.longPress(target);
       await tester.pumpAndSettle();
       expect(find.byType(ReaderIllustrationGallery), findsOneWidget);
       expect(state.readerChromeVisible, chromeWasVisible);

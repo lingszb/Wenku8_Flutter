@@ -7331,27 +7331,27 @@ class _ReaderPageState extends State<ReaderPage>
     final url = readerIllustrationUrl(paragraphs[index]);
     if (url != null) {
       final placement = source?.placementIds[index];
-      final VoidCallback openImage = () => pushNovelPage<void>(
-          context,
-          _readerSurface(
-            ReaderIllustrationGallery(
-              urls: source!.illustrations,
-              initialUrl: url,
-              onBookmark: (imageUrl) {
-                final paragraph = source.paragraphs.indexWhere(
-                  (text) => readerIllustrationUrl(text) == imageUrl,
-                );
-                return _addIllustrationBookmark(
-                  imageUrl: imageUrl,
-                  chapter: chapter,
-                  paragraph: paragraph < 0 ? index : paragraph,
-                );
-              },
-            ),
+      void openImage() => pushNovelPage<void>(
+        context,
+        _readerSurface(
+          ReaderIllustrationGallery(
+            urls: source!.illustrations,
+            initialUrl: url,
+            onBookmark: (imageUrl) {
+              final paragraph = source.paragraphs.indexWhere(
+                (text) => readerIllustrationUrl(text) == imageUrl,
+              );
+              return _addIllustrationBookmark(
+                imageUrl: imageUrl,
+                chapter: chapter,
+                paragraph: paragraph < 0 ? index : paragraph,
+              );
+            },
           ),
-          slot: ReaderIllustrationGallery,
-          reduceMotion: widget.state.reduceMotion,
-        );
+        ),
+        slot: ReaderIllustrationGallery,
+        reduceMotion: widget.state.reduceMotion,
+      );
       // Leave single taps to ReaderTapSurface (chrome or configured paging).
       // A placed illustration has one long-press owner for both actions.
       return ReaderIllustration(

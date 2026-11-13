@@ -732,6 +732,13 @@ class _ReaderIllustrationState extends State<ReaderIllustration> {
           return frame(
             LayoutBuilder(
               builder: (context, constraints) => GestureDetector(
+                // The decoded frame can temporarily be a non-hit-testable
+                // skeleton. Keep the actual illustration gesture region
+                // available while decoding, without adding a tap recognizer
+                // to long-press-only reader illustrations.
+                behavior: widget.onOpen != null || widget.onLongPress != null
+                    ? HitTestBehavior.opaque
+                    : HitTestBehavior.deferToChild,
                 onTap: widget.onOpen == null
                     ? null
                     : () {
