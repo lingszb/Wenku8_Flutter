@@ -7330,7 +7330,31 @@ class _ReaderPageState extends State<ReaderPage>
     }
     final url = readerIllustrationUrl(paragraphs[index]);
     if (url != null) {
-      final image = ReaderIllustration(
+      final placement = source?.placementIds[index];
+      void openImage() => pushNovelPage<void>(
+        context,
+        _readerSurface(
+          ReaderIllustrationGallery(
+            urls: source!.illustrations,
+            initialUrl: url,
+            onBookmark: (imageUrl) {
+              final paragraph = source.paragraphs.indexWhere(
+                (text) => readerIllustrationUrl(text) == imageUrl,
+              );
+              return _addIllustrationBookmark(
+                imageUrl: imageUrl,
+                chapter: chapter,
+                paragraph: paragraph < 0 ? index : paragraph,
+              );
+            },
+          ),
+        ),
+        slot: ReaderIllustrationGallery,
+        reduceMotion: widget.state.reduceMotion,
+      );
+      // Leave single taps to ReaderTapSurface (chrome or configured paging).
+      // A placed illustration has one long-press owner for both actions.
+      return ReaderIllustration(
         url: url,
         fitPage: fullPage,
         alignment: switch (source?.formats[index]?.alignment) {
@@ -7341,38 +7365,10 @@ class _ReaderPageState extends State<ReaderPage>
         localLayout: LocalImageLayout.fromParagraph(paragraphs[index]),
         fontSize: MediaQuery.textScalerOf(context).scale(style.fontSize ?? 19),
         sizedFrame: sizedImage,
-        onOpen: () => pushNovelPage<void>(
-          context,
-          _readerSurface(
-            ReaderIllustrationGallery(
-              urls: source!.illustrations,
-              initialUrl: url,
-              onBookmark: (imageUrl) {
-                final paragraph = source.paragraphs.indexWhere(
-                  (text) => readerIllustrationUrl(text) == imageUrl,
-                );
-                return _addIllustrationBookmark(
-                  imageUrl: imageUrl,
-                  chapter: chapter,
-                  paragraph: paragraph < 0 ? index : paragraph,
-                );
-              },
-            ),
-          ),
-          slot: ReaderIllustrationGallery,
-          reduceMotion: widget.state.reduceMotion,
-        ),
+        onLongPress: placement == null
+            ? openImage
+            : () => _placedIllustrationActions(placement, openImage),
       );
-      final placement = source?.placementIds[index];
-      return placement == null
-          ? image
-          : GestureDetector(
-              onLongPress: () {
-                AppHaptics.play(context, HapticCue.longPress);
-                _removePlacedIllustration(placement);
-              },
-              child: image,
-            );
     }
     if (paragraphs[index].trim() == '[插图]') {
       return ReaderIllustrationFrame(
@@ -8743,7 +8739,62 @@ class _ReaderPageState extends State<ReaderPage>
       reduceMotion: widget.state.reduceMotion,
     );
     if (mounted && inserted == true) {
-      showNovelFeedback(context, '已嵌入段落之后，长按插图可移除');
+      showNovelFeedback(context, '已嵌入段落之后，长按插图可查看或移除');
+    }
+  }
+
+  Future<void> _placedIllustrationActions(
+    String id,
+    VoidCallback openImage,
+  ) async {
+    if (_noteOpen || _toolsOpen || _catalogueOpen || _findOpen) return;
+    _cancelExitRequest();
+    _stopAutoScroll();
+    _selection.clear();
+    _noteOpen = true;
+    String? action;
+    try {
+      action = await showJellySheet<String>(
+        context: context,
+        reduceMotion: widget.state.reduceMotion,
+        surfaceWrapper: _readerSurface,
+        builder: (sheet) => Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const AppText(
+                '插图操作',
+                style: TextStyle(fontSize: 21, fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 16),
+              GlassTextButton(
+                key: const ValueKey('reader-placed-illustration-open'),
+                onPressed: () => Navigator.pop(sheet, 'open'),
+                child: const AppText('查看大图'),
+              ),
+              GlassTextButton(
+                key: const ValueKey('reader-placed-illustration-remove'),
+                onPressed: () => Navigator.pop(sheet, 'remove'),
+                child: const AppText('移除插图位置'),
+              ),
+              GlassTextButton(
+                onPressed: () => Navigator.pop(sheet),
+                child: const AppText('取消'),
+              ),
+            ],
+          ),
+        ),
+      );
+    } finally {
+      _noteOpen = false;
+    }
+    if (!mounted) return;
+    if (action == 'open') {
+      openImage();
+    } else if (action == 'remove') {
+      await _removePlacedIllustration(id);
     }
   }
 

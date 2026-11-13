@@ -146,6 +146,38 @@ void main() {
       expect(tester.getRect(images).left, closeTo(0, .01));
       expect(tester.getSize(images).width, closeTo(400, .01));
       expect(tester.widget<Image>(images).fit, BoxFit.contain);
+
+      // A full-page illustration shares the reader's centre tap, while only
+      // a long press opens the gallery. Check both paper and static turns.
+      final illustration = find.byType(ReaderIllustration);
+      expect(tester.widget<ReaderIllustration>(illustration).onOpen, isNull);
+      expect(
+        tester.widget<ReaderIllustration>(illustration).onLongPress,
+        isNotNull,
+      );
+      // Target the actual gesture surface, not Image's transient render
+      // subtree: the engine can still be decoding and showing a skeleton.
+      final target = find.descendant(
+        of: illustration,
+        matching: find.byWidgetPredicate(
+          (widget) => widget is GestureDetector && widget.onLongPress != null,
+        ),
+      );
+      expect(target.hitTestable(), findsOneWidget);
+      final chromeWasVisible = state.readerChromeVisible;
+      await tester.tap(target);
+      await tester.pumpAndSettle();
+      expect(find.byType(ReaderIllustrationGallery), findsNothing);
+      expect(state.readerChromeVisible, !chromeWasVisible);
+      expect(target.hitTestable(), findsOneWidget);
+      await tester.tap(target);
+      await tester.pumpAndSettle();
+      expect(state.readerChromeVisible, chromeWasVisible);
+      expect(target.hitTestable(), findsOneWidget);
+      await tester.longPress(target);
+      await tester.pumpAndSettle();
+      expect(find.byType(ReaderIllustrationGallery), findsOneWidget);
+      expect(state.readerChromeVisible, chromeWasVisible);
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox.shrink());
     });

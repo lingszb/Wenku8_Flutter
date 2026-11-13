@@ -562,6 +562,7 @@ class ReaderIllustration extends StatefulWidget {
     super.key,
     required this.url,
     this.onOpen,
+    this.onLongPress,
     this.cache,
     this.fullScreen = false,
     this.detailResolution = false,
@@ -573,6 +574,7 @@ class ReaderIllustration extends StatefulWidget {
   });
   final String url;
   final VoidCallback? onOpen;
+  final VoidCallback? onLongPress;
   final ReaderIllustrationCache? cache;
   final bool fullScreen;
   final bool detailResolution;
@@ -730,14 +732,31 @@ class _ReaderIllustrationState extends State<ReaderIllustration> {
           return frame(
             LayoutBuilder(
               builder: (context, constraints) => GestureDetector(
+                // The decoded frame can temporarily be a non-hit-testable
+                // skeleton. Keep the actual illustration gesture region
+                // available while decoding, without adding a tap recognizer
+                // to long-press-only reader illustrations.
+                behavior: widget.onOpen != null || widget.onLongPress != null
+                    ? HitTestBehavior.opaque
+                    : HitTestBehavior.deferToChild,
                 onTap: widget.onOpen == null
                     ? null
                     : () {
                         AppHaptics.play(context, HapticCue.action);
                         widget.onOpen!();
                       },
+                onLongPress: widget.onLongPress == null
+                    ? null
+                    : () {
+                        AppHaptics.play(context, HapticCue.longPress);
+                        widget.onLongPress!();
+                      },
                 child: Semantics(
-                  label: '章节插图，点击查看大图',
+                  label: widget.onLongPress != null
+                      ? '章节插图，长按查看大图'
+                      : widget.onOpen != null
+                      ? '章节插图，点击查看大图'
+                      : '章节插图',
                   image: true,
                   child: _IllustrationPixels(
                     cache: _cache,
