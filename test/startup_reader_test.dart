@@ -146,6 +146,27 @@ void main() {
       expect(tester.getRect(images).left, closeTo(0, .01));
       expect(tester.getSize(images).width, closeTo(400, .01));
       expect(tester.widget<Image>(images).fit, BoxFit.contain);
+
+      // A full-page illustration shares the reader's centre tap, while only
+      // a long press opens the gallery. Check both paper and static turns.
+      final illustration = find.byType(ReaderIllustration);
+      expect(tester.widget<ReaderIllustration>(illustration).onOpen, isNull);
+      expect(
+        tester.widget<ReaderIllustration>(illustration).onLongPress,
+        isNotNull,
+      );
+      final chromeWasVisible = state.readerChromeVisible;
+      await tester.tap(images);
+      await tester.pumpAndSettle();
+      expect(find.byType(ReaderIllustrationGallery), findsNothing);
+      expect(state.readerChromeVisible, !chromeWasVisible);
+      await tester.tap(images);
+      await tester.pumpAndSettle();
+      expect(state.readerChromeVisible, chromeWasVisible);
+      await tester.longPress(images);
+      await tester.pumpAndSettle();
+      expect(find.byType(ReaderIllustrationGallery), findsOneWidget);
+      expect(state.readerChromeVisible, chromeWasVisible);
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox.shrink());
     });
