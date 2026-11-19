@@ -156,11 +156,16 @@ void main() {
       });
       await tester.pumpAndSettle();
       expect(state.startPage, AppStartPage.profile);
-      final down = find.byWidgetPredicate(
-        (w) => w is GlassIconButton && w.label == '后移书架',
-      );
+      final handle = find.byKey(const ValueKey('settings-tab-drag-shelf'));
+      expect(handle.hitTestable(), findsOneWidget);
+      final gesture = await tester.startGesture(tester.getCenter(handle));
+      await tester.pump(const Duration(milliseconds: 600));
+      await tester.pump();
+      await gesture.moveBy(const Offset(0, 38));
+      await tester.pumpAndSettle();
       await tester.runAsync(() async {
-        await tester.tap(down);
+        await gesture.up();
+        await tester.pumpAndSettle();
         await state.createBackup();
       });
       await tester.pumpAndSettle();

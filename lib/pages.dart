@@ -2749,10 +2749,10 @@ class SettingsPage extends StatelessWidget {
     ),
   );
 
-  void _moveHomeTab(BuildContext context, int index, int delta) {
+  void _moveHomeTab(BuildContext context, int from, int to) {
     final next = state.homeTabOrder.toList();
-    final page = next.removeAt(index);
-    next.insert(index + delta, page);
+    final page = next.removeAt(from);
+    next.insert(to, page);
     _savePreference(context, () => state.setHomeTabOrder(next));
   }
 
@@ -2779,27 +2779,38 @@ class SettingsPage extends StatelessWidget {
             alignment: Alignment.centerLeft,
             child: AppText('Tab 排列顺序'),
           ),
-          for (final (index, page) in state.homeTabOrder.indexed)
-            Row(
-              key: ValueKey('settings-tab-order-${page.name}'),
-              children: [
-                Expanded(child: AppText(page.label)),
-                GlassIconButton(
-                  icon: CupertinoIcons.arrow_up,
-                  label: '前移${page.label}',
-                  onPressed: index == 0
-                      ? null
-                      : () => _moveHomeTab(context, index, -1),
+          ReorderableListView(
+            shrinkWrap: true,
+            primary: false,
+            physics: const NeverScrollableScrollPhysics(),
+            padding: EdgeInsets.zero,
+            buildDefaultDragHandles: false,
+            onReorderItem: (from, to) => _moveHomeTab(context, from, to),
+            children: [
+              for (final (index, page) in state.homeTabOrder.indexed)
+                Row(
+                  key: ValueKey('settings-tab-order-${page.name}'),
+                  children: [
+                    Expanded(child: AppText(page.label)),
+                    ReorderableDelayedDragStartListener(
+                      key: ValueKey('settings-tab-drag-${page.name}'),
+                      index: index,
+                      child: Tooltip(
+                        message: '按住拖动${page.label}排序',
+                        triggerMode: TooltipTriggerMode.manual,
+                        child: const SizedBox.square(
+                          dimension: 48,
+                          child: ColoredBox(
+                            color: Colors.transparent,
+                            child: Icon(CupertinoIcons.line_horizontal_3),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-                GlassIconButton(
-                  icon: CupertinoIcons.arrow_down,
-                  label: '后移${page.label}',
-                  onPressed: index == 2
-                      ? null
-                      : () => _moveHomeTab(context, index, 1),
-                ),
-              ],
-            ),
+            ],
+          ),
           const Divider(height: 22),
           _toggleSetting(
             context,
@@ -7331,27 +7342,31 @@ class _ReaderPageState extends State<ReaderPage>
     final url = readerIllustrationUrl(paragraphs[index]);
     if (url != null) {
       final placement = source?.placementIds[index];
-      void openImage() => pushNovelPage<void>(
-        context,
-        _readerSurface(
-          ReaderIllustrationGallery(
-            urls: source!.illustrations,
-            initialUrl: url,
-            onBookmark: (imageUrl) {
-              final paragraph = source.paragraphs.indexWhere(
-                (text) => readerIllustrationUrl(text) == imageUrl,
-              );
-              return _addIllustrationBookmark(
-                imageUrl: imageUrl,
-                chapter: chapter,
-                paragraph: paragraph < 0 ? index : paragraph,
-              );
-            },
+      void openImage() {
+        _prepareToOpenIllustrations();
+        pushNovelPage<void>(
+          context,
+          _readerSurface(
+            ReaderIllustrationGallery(
+              urls: source!.illustrations,
+              initialUrl: url,
+              onBookmark: (imageUrl) {
+                final paragraph = source.paragraphs.indexWhere(
+                  (text) => readerIllustrationUrl(text) == imageUrl,
+                );
+                return _addIllustrationBookmark(
+                  imageUrl: imageUrl,
+                  chapter: chapter,
+                  paragraph: paragraph < 0 ? index : paragraph,
+                );
+              },
+            ),
           ),
-        ),
-        slot: ReaderIllustrationGallery,
-        reduceMotion: widget.state.reduceMotion,
-      );
+          slot: ReaderIllustrationGallery,
+          reduceMotion: widget.state.reduceMotion,
+        );
+      }
+
       // Leave single taps to ReaderTapSurface (chrome or configured paging).
       // A placed illustration has one long-press owner for both actions.
       return ReaderIllustration(
@@ -8661,11 +8676,15 @@ class _ReaderPageState extends State<ReaderPage>
     }
   }
 
-  Future<void> _volumeIllustrations() async {
+  void _prepareToOpenIllustrations() {
     _cancelExitRequest();
     _selection.clear();
     _stopAutoScroll();
     _suspendListeningFollow();
+  }
+
+  Future<void> _volumeIllustrations() async {
+    _prepareToOpenIllustrations();
     await pushNovelPage<void>(
       context,
       _readerSurface(
@@ -8720,9 +8739,7 @@ class _ReaderPageState extends State<ReaderPage>
             anchor.paragraph >= source.paragraphs.length)) {
       return;
     }
-    _selection.clear();
-    _stopAutoScroll();
-    _suspendListeningFollow();
+    _prepareToOpenIllustrations();
     final inserted = await pushNovelPage<bool>(
       context,
       _readerSurface(
@@ -8748,9 +8765,7 @@ class _ReaderPageState extends State<ReaderPage>
     VoidCallback openImage,
   ) async {
     if (_noteOpen || _toolsOpen || _catalogueOpen || _findOpen) return;
-    _cancelExitRequest();
-    _stopAutoScroll();
-    _selection.clear();
+    _prepareToOpenIllustrations();
     _noteOpen = true;
     String? action;
     try {
@@ -9133,7 +9148,7 @@ class _ReaderPageState extends State<ReaderPage>
 
   Future<void> _requestExit() async {
     if (_allowExit) return;
-    if (_toolsOpen || _catalogueOpen || _findOpen) {
+    if (_toolsOpen || _catalogueOpen || _findOpen || _noteOpen) {
       _cancelExitRequest();
       return;
     }
@@ -10160,6 +10175,7 @@ class _ReaderPageState extends State<ReaderPage>
                           onDictionary: _lookupQuote,
                           onIllustrations: _volumeIllustrations,
                           onSelect: () {
+                            _cancelExitRequest();
                             _stopAutoScroll();
                             _suspendListeningFollow();
                           },

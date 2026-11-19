@@ -196,7 +196,7 @@ void main() {
     PaintingBinding.instance.imageCache.clear();
   });
 
-  testWidgets('page turns warm upcoming pixels and retain the previous image', (
+  testWidgets('page turns and resume warm the current spread first', (
     tester,
   ) async {
     tester.view.devicePixelRatio = 1;
@@ -260,6 +260,40 @@ void main() {
     expect(controller.pageBy(-1), isTrue);
     await tester.pumpAndSettle();
     expect(reads.values, everyElement(1));
+
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    cache.clearMemory();
+    PaintingBinding.instance.imageCache.clear();
+    reads.clear();
+    await tester.pump();
+    expect(reads, isEmpty);
+
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pump();
+    await finishWarmup();
+    expect(reads.keys, orderedEquals(urls.take(3)));
+    expect(controller.page, 0);
+
+    final navigator = Navigator.of(
+      tester.element(find.byType(ReaderPagedView)),
+    );
+    navigator.push<void>(
+      MaterialPageRoute<void>(builder: (_) => const SizedBox.expand()),
+    );
+    await tester.pumpAndSettle();
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    cache.clearMemory();
+    PaintingBinding.instance.imageCache.clear();
+    reads.clear();
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pumpAndSettle();
+    expect(reads, isEmpty);
+
+    navigator.pop();
+    await tester.pumpAndSettle();
+    await finishWarmup();
+    expect(reads.keys, orderedEquals(urls.take(3)));
+    expect(controller.page, 0);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
   });
