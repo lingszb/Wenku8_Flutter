@@ -120,7 +120,28 @@ jobs:
           grep -F 'gradle-8.14-all.zip' android/gradle/wrapper/gradle-wrapper.properties
 
       - name: Build Android ARM64 debug APK
-        run: flutter build apk --debug --target-platform android-arm64 --no-pub
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Flutter's included build has its own plugin repositories.
+          # Resolve Kotlin artifacts from Maven Central and plugin markers
+          # unavailable there from the Gradle Plugin Portal.
+          init_dir="${GRADLE_USER_HOME:-$HOME/.gradle}/init.d"
+          mkdir -p "$init_dir"
+          init_script="$init_dir/wenku-flutter-plugin-repositories.gradle"
+          trap 'rm -f "$init_script"' EXIT
+          cat > "$init_script" <<'GRADLE'
+          gradle.beforeSettings { settings ->
+              def flutterBuild = new File(System.getenv('FLUTTER_ROOT'), 'packages/flutter_tools/gradle')
+              if (settings.settingsDir.canonicalFile == flutterBuild.canonicalFile) {
+                  settings.pluginManagement.repositories {
+                      mavenCentral()
+                      gradlePluginPortal()
+                  }
+              }
+          }
+          GRADLE
+          flutter build apk --debug --target-platform android-arm64 --no-pub
 
       - name: Verify APK output and SHA-256
         shell: bash
