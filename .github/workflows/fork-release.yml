@@ -75,7 +75,27 @@ jobs:
         env:
           ORG_GRADLE_PROJECT_wenkuForkDistribution: 'true'
           ORG_GRADLE_PROJECT_wenkuUnsignedRelease: 'true'
-        run: flutter build apk --release --target-platform android-arm64 --no-pub
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Match the Debug workflow's repository setup for Flutter's included build.
+          init_dir="${GRADLE_USER_HOME:-$HOME/.gradle}/init.d"
+          mkdir -p "$init_dir"
+          init_script="$init_dir/wenku-flutter-plugin-repositories.gradle"
+          trap 'rm -f "$init_script"' EXIT
+          cat > "$init_script" <<'GRADLE'
+          gradle.beforeSettings { settings ->
+              def flutterBuild = new File(System.getenv('FLUTTER_ROOT'), 'packages/flutter_tools/gradle')
+              if (settings.settingsDir.canonicalFile == flutterBuild.canonicalFile) {
+                  settings.pluginManagement.repositories {
+                      maven { url = uri('https://repo.huaweicloud.com/repository/maven/') }
+                      mavenCentral()
+                      gradlePluginPortal()
+                  }
+              }
+          }
+          GRADLE
+          flutter build apk --release --target-platform android-arm64 --no-pub
       - uses: actions/upload-artifact@v4
         with:
           name: unsigned-release-${{ github.run_id }}

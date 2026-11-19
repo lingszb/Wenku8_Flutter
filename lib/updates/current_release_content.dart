@@ -13,15 +13,11 @@ const releaseRightsNotice =
     '小说、封面和插图归各自权利人所有。请仅使用有权访问的内容，遵守来源网站规则，不得绕过访问限制、破解 DRM，或未经许可传播、出售内容。';
 const releaseReadingNotice = '**书籍目录、正文、封面和插图从本地导入文件或已有历史缓存读取。**';
 const releaseMaintenanceNotice = '项目以稳定维护为主，后续非必要不再发版。';
-const _interruption = '修复听书被通知等短暂打断后，可能无法恢复播放的问题。';
-const _cache = '修复本地书籍在线听书时，临时缓存被清理后可能出现“缓存失败”的问题。';
-const _retry = '优化在线语音的断线重试；加载失败时保留当前段落，避免跳过正文。';
-const _resources = '修复连续听书时音频资源累积的问题，改善长时间使用的内存占用与流畅度。';
-const _changes = [_interruption, _cache, _retry, _resources];
-const _androidInstall = '**Android**：直接覆盖更新，不要先卸载旧版。';
-const _iosInstall = '**iOS**：提供未签名包，主应用与小组件均需自行签名。';
-const _harmonyInstall = '**HarmonyOS**：提供未签名包，需自行签名后安装。';
-const _legacyInstall = '**iOS／HarmonyOS 0.5.0 用户**：请先手动更新一次。';
+const _illustrations = '正文插图可长按查看大图，单击仍用于阅读控件。';
+const _warmup = '应用回到前台或关闭图库后恢复插图预热，减少翻页时的加载等待。';
+const _navigation = '「导航与启动」支持拖动手柄调整底部 Tab 顺序。';
+const _changes = [_illustrations, _warmup, _navigation];
+const _androidInstall = '**Android ARM64**：已安装同签名正式版的用户可直接覆盖更新。';
 const _backup = '升级、整理存储或同步前，请先备份重要书籍和阅读记录。';
 const publicReleaseNotes =
     '''
@@ -39,10 +35,9 @@ $releaseReadingNotice
 
 ### 本次更新
 
-- $_interruption
-- $_cache
-- $_retry
-- $_resources
+- $_illustrations
+- $_warmup
+- $_navigation
 
 ### 后续维护
 
@@ -51,9 +46,6 @@ $releaseMaintenanceNotice
 ### 安装说明
 
 - $_androidInstall
-- $_iosInstall
-- $_harmonyInstall
-- $_legacyInstall
 
 $_backup
 ''';
@@ -77,9 +69,6 @@ const currentReleaseSections = [
     ..._changes,
     releaseMaintenanceNotice,
     _androidInstall,
-    _iosInstall,
-    _harmonyInstall,
-    _legacyInstall,
     _backup,
   ]),
 ];
