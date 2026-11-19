@@ -2749,10 +2749,10 @@ class SettingsPage extends StatelessWidget {
     ),
   );
 
-  void _moveHomeTab(BuildContext context, int index, int delta) {
+  void _moveHomeTab(BuildContext context, int from, int to) {
     final next = state.homeTabOrder.toList();
-    final page = next.removeAt(index);
-    next.insert(index + delta, page);
+    final page = next.removeAt(from);
+    next.insert(to, page);
     _savePreference(context, () => state.setHomeTabOrder(next));
   }
 
@@ -2779,27 +2779,38 @@ class SettingsPage extends StatelessWidget {
             alignment: Alignment.centerLeft,
             child: AppText('Tab 排列顺序'),
           ),
-          for (final (index, page) in state.homeTabOrder.indexed)
-            Row(
-              key: ValueKey('settings-tab-order-${page.name}'),
-              children: [
-                Expanded(child: AppText(page.label)),
-                GlassIconButton(
-                  icon: CupertinoIcons.arrow_up,
-                  label: '前移${page.label}',
-                  onPressed: index == 0
-                      ? null
-                      : () => _moveHomeTab(context, index, -1),
+          ReorderableListView(
+            shrinkWrap: true,
+            primary: false,
+            physics: const NeverScrollableScrollPhysics(),
+            padding: EdgeInsets.zero,
+            buildDefaultDragHandles: false,
+            onReorderItem: (from, to) => _moveHomeTab(context, from, to),
+            children: [
+              for (final (index, page) in state.homeTabOrder.indexed)
+                Row(
+                  key: ValueKey('settings-tab-order-${page.name}'),
+                  children: [
+                    Expanded(child: AppText(page.label)),
+                    ReorderableDelayedDragStartListener(
+                      key: ValueKey('settings-tab-drag-${page.name}'),
+                      index: index,
+                      child: Tooltip(
+                        message: '按住拖动${page.label}排序',
+                        triggerMode: TooltipTriggerMode.manual,
+                        child: const SizedBox.square(
+                          dimension: 48,
+                          child: ColoredBox(
+                            color: Colors.transparent,
+                            child: Icon(CupertinoIcons.line_horizontal_3),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-                GlassIconButton(
-                  icon: CupertinoIcons.arrow_down,
-                  label: '后移${page.label}',
-                  onPressed: index == 2
-                      ? null
-                      : () => _moveHomeTab(context, index, 1),
-                ),
-              ],
-            ),
+            ],
+          ),
           const Divider(height: 22),
           _toggleSetting(
             context,
