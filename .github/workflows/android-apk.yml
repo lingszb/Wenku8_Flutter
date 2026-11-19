@@ -124,8 +124,8 @@ jobs:
         run: |
           set -euo pipefail
           # Flutter's included build has its own plugin repositories.
-          # Resolve Kotlin artifacts from Maven Central and plugin markers
-          # unavailable there from the Gradle Plugin Portal.
+          # Use the Maven mirror first because the runner can resolve Central
+          # metadata while receiving 404s for the corresponding JARs.
           init_dir="${GRADLE_USER_HOME:-$HOME/.gradle}/init.d"
           mkdir -p "$init_dir"
           init_script="$init_dir/wenku-flutter-plugin-repositories.gradle"
@@ -135,6 +135,7 @@ jobs:
               def flutterBuild = new File(System.getenv('FLUTTER_ROOT'), 'packages/flutter_tools/gradle')
               if (settings.settingsDir.canonicalFile == flutterBuild.canonicalFile) {
                   settings.pluginManagement.repositories {
+                      maven { url = uri('https://repo.huaweicloud.com/repository/maven/') }
                       mavenCentral()
                       gradlePluginPortal()
                   }
