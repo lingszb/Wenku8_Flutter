@@ -15,8 +15,8 @@ const updateRepository = String.fromEnvironment(
   'UPDATE_REPOSITORY',
   defaultValue: 'lingszb/Wenku8_Flutter',
 );
-const currentAppVersion = '0.1.0';
-const currentAppBuild = 1;
+const currentAppVersion = '0.1.1';
+const currentAppBuild = 2;
 
 class ReleaseVersion implements Comparable<ReleaseVersion> {
   const ReleaseVersion(this.major, this.minor, this.patch, [this.build = 0]);
