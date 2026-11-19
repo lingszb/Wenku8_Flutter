@@ -12,11 +12,17 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:wenku8_flutter/catalog.dart';
 import 'package:wenku8_flutter/library_state.dart';
+import 'package:wenku8_flutter/illustration_placement.dart';
+import 'package:wenku8_flutter/listening/controller.dart';
+import 'package:wenku8_flutter/listening/models.dart';
+import 'package:wenku8_flutter/listening/widgets.dart';
 import 'package:wenku8_flutter/pages.dart';
 import 'package:wenku8_flutter/local_book_media.dart';
 import 'package:wenku8_flutter/reader_illustrations.dart';
 import 'package:wenku8_flutter/reader_paged_view.dart';
 import 'package:wenku8_flutter/reader_preferences.dart';
+import 'package:wenku8_flutter/reader_selection.dart';
+import 'package:wenku8_flutter/reader_tools.dart';
 
 class _DelayedRepository extends DemoNovelRepository {
   final directory = Completer<List<NovelChapter>>();
@@ -45,6 +51,31 @@ class _WaitingUpdates extends AppUpdates {
   Future<void> loadInstalled({bool refresh = false}) => ready.future;
 }
 
+class _TestListening extends Fake implements ListeningController {
+  @override
+  final snapshot = ValueNotifier(const ListeningSnapshot());
+  @override
+  final progress = ValueNotifier(const ListeningProgress());
+  final followChanges = <bool>[];
+  int playbackCommands = 0;
+
+  @override
+  Future<void> setFollow(bool follow) async {
+    followChanges.add(follow);
+    snapshot.value = ListeningSnapshot(
+      novel: snapshot.value.novel,
+      phase: snapshot.value.phase,
+      follow: follow,
+    );
+  }
+
+  @override
+  Future<void> pause() async => playbackCommands++;
+
+  @override
+  Future<void> stop() async => playbackCommands++;
+}
+
 void main() {
   late LibraryState state;
   late _DelayedRepository repository;
@@ -58,6 +89,7 @@ void main() {
     double scale = 1,
     ReaderMode mode = ReaderMode.scroll,
     int? savedParagraph,
+    ListeningController? listening,
   }) async {
     SharedPreferences.setMockInitialValues({});
     state = await LibraryState.load();
@@ -84,7 +116,7 @@ void main() {
             disableAnimations: reduced,
             textScaler: TextScaler.linear(scale),
           ),
-          child: child!,
+          child: ListeningScope(controller: listening, child: child!),
         ),
         home: ReaderLoaderPage(
           novel: book,
@@ -125,7 +157,10 @@ void main() {
         LocalBookMedia.externalImages = previousBatch;
         root.deleteSync(recursive: true);
       });
-      await open(tester, mode: ReaderMode.paged);
+      final listening = _TestListening();
+      addTearDown(listening.snapshot.dispose);
+      addTearDown(listening.progress.dispose);
+      await open(tester, mode: ReaderMode.paged, listening: listening);
       await state.setReaderPreferences(
         state.readerPreferencesFor(book.id).copyWith(pageEffect: effect),
         persist: false,
@@ -174,13 +209,199 @@ void main() {
       await tester.pumpAndSettle();
       expect(state.readerChromeVisible, chromeWasVisible);
       expect(target.hitTestable(), findsOneWidget);
+      await tester.binding.handlePopRoute();
+      await tester.pump();
+      expect(find.text('再滑动一次退出阅读'), findsOneWidget);
+      final followsThisBook = effect == ReaderPageEffect.none;
+      listening.snapshot.value = ListeningSnapshot(
+        novel: followsThisBook
+            ? book
+            : demoNovels.firstWhere((novel) => novel.id != book.id),
+        phase: ListeningPhase.playing,
+      );
       await tester.longPress(target);
       await tester.pumpAndSettle();
       expect(find.byType(ReaderIllustrationGallery), findsOneWidget);
       expect(state.readerChromeVisible, chromeWasVisible);
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(find.byType(ReaderIllustrationGallery), findsNothing);
+      expect(target.hitTestable(), findsOneWidget);
+      expect(state.readerChromeVisible, chromeWasVisible);
+      expect(listening.followChanges, followsThisBook ? [false] : isEmpty);
+      expect(listening.snapshot.value.follow, !followsThisBook);
+      expect(listening.snapshot.value.playing, isTrue);
+      expect(listening.playbackCommands, 0);
+      await tester.binding.handlePopRoute();
+      await tester.pump();
+      expect(find.text('再滑动一次退出阅读'), findsOneWidget);
+      expect(target.hitTestable(), findsOneWidget);
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox.shrink());
     });
+  }
+
+  for (final (mode, effect, placed) in [
+    (ReaderMode.scroll, ReaderPageEffect.none, false),
+    (ReaderMode.paged, ReaderPageEffect.none, false),
+    (ReaderMode.paged, ReaderPageEffect.paper, false),
+    (ReaderMode.scroll, ReaderPageEffect.none, true),
+  ]) {
+    testWidgets(
+      '${placed ? 'canceling placed image actions' : 'opening an image'} '
+      'stops automatic movement in ${mode.name}/${effect.name}',
+      (tester) async {
+        tester.view.devicePixelRatio = 1;
+        tester.view.physicalSize = const Size(400, 900);
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        final previousRoot = LocalBookMedia.root;
+        final previousReader = LocalBookMedia.externalImage;
+        final previousBatch = LocalBookMedia.externalImages;
+        final output = Directory('.tmp/verification')
+          ..createSync(recursive: true);
+        final root = output.createTempSync('full-width-epub-');
+        final url = placed
+            ? 'https://example.invalid/placed.png'
+            : 'wenku-local://1610612736/img-900.png';
+        final bytes = File('assets/report/season-spring.png').readAsBytesSync();
+        LocalBookMedia.root = root;
+        LocalBookMedia.externalImage = (_, _) async => bytes;
+        final cache = ReaderIllustrationCache.shared;
+        final offlineReader = cache.offlineReader;
+        cache.clearMemory();
+        if (placed) cache.offlineReader = (_) async => bytes;
+        addTearDown(() {
+          cache.clearMemory();
+          cache.offlineReader = offlineReader;
+          LocalBookMedia.root = previousRoot;
+          LocalBookMedia.externalImage = previousReader;
+          LocalBookMedia.externalImages = previousBatch;
+          root.deleteSync(recursive: true);
+        });
+        await open(tester, mode: mode);
+        await state.setReaderPreferences(
+          state.readerPreferencesFor(book.id).copyWith(pageEffect: effect),
+          persist: false,
+        );
+        const anchor = '插图之前的正文。';
+        final chapter = placed
+            ? const NovelChapter('插图测试章节', '', id: 1)
+            : book.chapters.first;
+        final placement = placed
+            ? IllustrationPlacement.at(
+                chapterId: chapter.id,
+                chapterTitle: chapter.title,
+                url: url,
+                paragraphs: const [anchor],
+                paragraph: 0,
+              )
+            : null;
+        if (placement != null) {
+          await state.putIllustration(book.id, placement);
+        }
+        repository.directory.complete([chapter]);
+        await tester.pumpAndSettle();
+        repository.text.complete(
+          '${placed ? anchor : '<!--image-->$url<!--image-->'}\n\n'
+          '${List.generate(100, (index) => '后页正文第$index段。用于确认查看插图后自动翻页已经停止。').join('\n\n')}',
+        );
+        await tester.pump();
+        await tester.runAsync(() async {
+          await ReaderIllustrationCache.shared.dimensions(url);
+        });
+        await tester.pumpAndSettle();
+        final images = find.descendant(
+          of: find.byType(ReaderIllustration),
+          matching: find.byType(Image),
+        );
+        expect(images, findsOneWidget);
+
+        final target = find.descendant(
+          of: find.byType(ReaderIllustration),
+          matching: find.byWidgetPredicate(
+            (widget) => widget is GestureDetector && widget.onLongPress != null,
+          ),
+        );
+        expect(target.hitTestable(), findsOneWidget);
+        // Start automatic movement through the tools route before opening
+        // the gallery. Keep the initial illustration within reach.
+        if (!state.readerChromeVisible) {
+          await tester.tap(target);
+          await tester.pumpAndSettle();
+        }
+        await tester.tap(find.byKey(const ValueKey('reader-operations-entry')));
+        await tester.pumpAndSettle();
+        Navigator.of(
+          tester.element(find.byType(ReaderTools)),
+        ).pop(const ReaderStartAutoScroll());
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 350));
+        final paged = mode == ReaderMode.paged
+            ? tester
+                  .widget<ReaderPagedView>(find.byType(ReaderPagedView))
+                  .controller
+            : null;
+        final scroll = mode == ReaderMode.scroll
+            ? tester
+                  .state<ScrollableState>(
+                    find.ancestor(
+                      of: target,
+                      matching: find.byType(Scrollable),
+                    ),
+                  )
+                  .position
+            : null;
+        if (paged != null) expect(paged.pageCount, greaterThan(1));
+        if (scroll != null) {
+          expect(scroll.maxScrollExtent, greaterThan(0));
+          final before = scroll.pixels;
+          for (var frame = 0; frame < 8; frame++) {
+            await tester.pump(const Duration(milliseconds: 50));
+          }
+          expect(scroll.pixels, greaterThan(before));
+        }
+        final pageBeforeGallery = paged?.page;
+        await tester.longPress(target);
+        await tester.pumpAndSettle();
+        expect(state.readerChromeVisible, isFalse);
+        if (placement != null) {
+          expect(find.text('插图操作'), findsOneWidget);
+          await tester.tap(find.text('取消'));
+        } else {
+          expect(find.byType(ReaderIllustrationGallery), findsOneWidget);
+          await tester.binding.handlePopRoute();
+        }
+        await tester.pumpAndSettle();
+        expect(find.byType(ReaderIllustrationGallery), findsNothing);
+        expect(find.text('插图操作'), findsNothing);
+        if (placement != null) {
+          expect(state.illustrationsFor(book.id).map((item) => item.id), [
+            placement.id,
+          ]);
+        }
+        expect(target.hitTestable(), findsOneWidget);
+        final offsetAfterGallery = scroll?.pixels;
+        await tester.pump(const Duration(seconds: 30));
+        await tester.pumpAndSettle();
+        expect(paged?.page, pageBeforeGallery);
+        expect(scroll?.pixels, offsetAfterGallery);
+        if (placement != null) {
+          await tester.binding.handlePopRoute();
+          await tester.pump();
+          expect(find.text('再滑动一次退出阅读'), findsOneWidget);
+          await tester.longPress(find.text(anchor, findRichText: true));
+          await tester.pumpAndSettle();
+          final selection = tester
+              .widget<ReaderSelection>(find.byType(ReaderSelection))
+              .controller;
+          expect(selection.value, isTrue);
+          expect(find.text('再滑动一次退出阅读'), findsNothing);
+        }
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+    );
   }
 
   testWidgets(

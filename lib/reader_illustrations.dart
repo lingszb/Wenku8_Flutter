@@ -271,16 +271,22 @@ class ReaderIllustrationCache {
     required bool Function() current,
   }) async {
     final ratio = MediaQuery.devicePixelRatioOf(context);
+    final epoch = _epoch;
+    bool active() => epoch == _epoch && current();
     for (final url in urls.toSet().take(4)) {
-      if (!current() || !context.mounted) return;
+      if (!context.mounted || !active()) return;
       try {
-        final request = _requestFor(url);
+        final request = _requestFor(url, retain: false);
         final bytes = await request.future;
-        if (!current() || !context.mounted) return;
-        final size = await _rememberSize(url, bytes, request.source);
-        if (!current() || !context.mounted || !_current(url, request.source)) {
+        if (!context.mounted || !active() || !_current(url, request.source)) {
           return;
         }
+        _rememberBytes(url, bytes, request.source, allowEviction: true);
+        final size = await _size(bytes);
+        if (!context.mounted || !active() || !_current(url, request.source)) {
+          return;
+        }
+        _rememberDimensions(url, size, request.source);
         final provider = _decodeProvider(
           url,
           bytes,
@@ -297,7 +303,10 @@ class ReaderIllustrationCache {
           context,
           onError: (error, stack) => failed = true,
         );
-        if (!failed && _current(url, request.source)) {
+        if (!failed &&
+            context.mounted &&
+            active() &&
+            _current(url, request.source)) {
           _decoded(url, bytes, request.source, provider);
         }
       } catch (_) {

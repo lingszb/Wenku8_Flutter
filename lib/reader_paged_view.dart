@@ -345,7 +345,7 @@ class ReaderPagedView extends StatefulWidget {
 }
 
 class _ReaderPagedViewState extends State<ReaderPagedView>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, WidgetsBindingObserver {
   late final _turn =
       AnimationController(
         vsync: this,
@@ -445,11 +445,22 @@ class _ReaderPagedViewState extends State<ReaderPagedView>
   int _pageBodyBuilds = 0;
   final _textLayout = ReaderTextLayoutCache();
   int _imageWarmup = 0;
+  bool _isCurrentRoute = true;
+  bool get _canWarmPageImages {
+    final lifecycle = WidgetsBinding.instance.lifecycleState;
+    return (lifecycle == null || lifecycle == AppLifecycleState.resumed) &&
+        _isCurrentRoute;
+  }
 
   void _warmPageImages() {
     final ticket = ++_imageWarmup;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || ticket != _imageWarmup || _pagination == null) return;
+      if (!mounted ||
+          ticket != _imageWarmup ||
+          !_canWarmPageImages ||
+          _pagination == null) {
+        return;
+      }
       final pagination = _pagination!;
       final page = _page;
       final urls = <String>{};
@@ -463,13 +474,16 @@ class _ReaderPagedViewState extends State<ReaderPagedView>
 
       // Current pixels first, then two upcoming spreads and one behind. At a
       // chapter edge include the already prepared neighbouring chapter.
+      for (final index in _visiblePages) {
+        add(pagination.pages[index]);
+      }
       final count = _bookLayout!.count;
       final first = _spreadFor(page) * count - _leadingPages;
       for (final spread in [0, 1, 2, -1]) {
         for (var slot = 0; slot < count; slot++) {
           final index = first + spread * count + slot;
           if (index >= 0 && index < pagination.pages.length) {
-            add(pagination.pages[index]);
+            if (spread != 0) add(pagination.pages[index]);
           } else {
             final adjacent = _adjacentLayouts[index < 0 ? -1 : 1];
             if (adjacent == null) continue;
@@ -489,11 +503,13 @@ class _ReaderPagedViewState extends State<ReaderPagedView>
           current: () =>
               mounted &&
               ticket == _imageWarmup &&
+              _canWarmPageImages &&
               identical(_pagination, pagination) &&
               _page == page,
         ),
       );
     });
+    WidgetsBinding.instance.ensureVisualUpdate();
   }
 
   // Pagination is canonical for its content, geometry and typography inputs.
@@ -577,12 +593,40 @@ class _ReaderPagedViewState extends State<ReaderPagedView>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     widget.controller._owner = this;
     _layoutStyle = widget.style;
     _pendingPosition = widget.position;
     if (widget.preservePositionStart) {
       _pageBreakAnchor = _anchorFor(widget.position);
     }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final isCurrent = ModalRoute.isCurrentOf(context) ?? true;
+    if (_isCurrentRoute == isCurrent) return;
+    _isCurrentRoute = isCurrent;
+    if (_canWarmPageImages) {
+      _warmPageImages();
+    } else {
+      _imageWarmup++;
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _warmPageImages();
+    } else {
+      _imageWarmup++;
+    }
+  }
+
+  @override
+  void didHaveMemoryPressure() {
+    _imageWarmup++;
   }
 
   @override
@@ -632,6 +676,7 @@ class _ReaderPagedViewState extends State<ReaderPagedView>
       }
     }
     if (contentChanged) {
+      _imageWarmup++;
       _readingAnchor = null;
       _layingOut = true;
       _pendingPosition = widget.position;
@@ -658,6 +703,7 @@ class _ReaderPagedViewState extends State<ReaderPagedView>
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _generation++;
     if (widget.controller._owner == this) widget.controller._owner = null;
     _pager?.dispose();
