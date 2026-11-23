@@ -161,6 +161,20 @@ void main() {
     }
   });
 
+  test('advances ordered list counters for nested-only items', () {
+    final files = _sampleFiles()
+      ..['OEBPS/ch1.xhtml'] = '''
+<html><body>
+<ol><li value="5"><ul><li>Nested</li></ul></li><li>Next</li></ol>
+</body></html>
+''';
+    final book = parseLocalBook(LocalBookInput('sample.epub', _zip(files)));
+    final body = ReaderRichBody.decode(book.bodies.first);
+
+    expect(body.formats[body.paragraphs.indexOf('Nested')]?.marker, '• ');
+    expect(body.formats[body.paragraphs.indexOf('Next')]?.marker, '6. ');
+  });
+
   test('reads list style type from declarations and shorthand', () {
     final document = html.parse('''
 <html><head><style>

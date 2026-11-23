@@ -3717,11 +3717,12 @@ String _liMarker(
   List<_EpubListState> stack,
   Map<html.Element, Map<String, String>> styles,
 ) {
-  if (stack.isEmpty || !_hasOwnContentBeforeNestedList(node)) return '';
+  if (stack.isEmpty) return '';
   final state = stack.last;
   // Publisher CSS may override the marker on the item itself.
   final type = styles[node]?['list-style-type'] ?? state.type;
   if (!state.ordered) {
+    if (!_hasOwnContentBeforeNestedList(node)) return '';
     return switch (type) {
       'none' => '',
       'circle' => '◦',
@@ -3731,6 +3732,7 @@ String _liMarker(
   }
   final number = int.tryParse(node.attributes['value'] ?? '') ?? state.next;
   state.next = state.reversed ? number - 1 : number + 1;
+  if (!_hasOwnContentBeforeNestedList(node)) return '';
   final text = switch (type) {
     'none' => '',
     'lower-alpha' || 'lower-latin' => _alphaMarker(number).toLowerCase(),
