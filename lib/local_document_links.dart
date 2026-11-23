@@ -42,6 +42,7 @@ extension LocalDocumentLinks on LocalBookStore {
         {
           'layout-rich-v1',
           'layout-rich-v2',
+          'layout-rich-v3',
           'layout-markup-v1',
         }.contains(source['layoutFolder'])
         ? '${source['layoutFolder']}/'

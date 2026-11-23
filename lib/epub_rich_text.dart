@@ -24,11 +24,13 @@ class EpubRichText {
     this.baseWriting, {
     this.baseLanguage = '',
     this.languageRoot,
+    this.extendedStyles = true,
   });
   final Map<Element, Map<String, String>> styles;
   final String baseWriting;
   final String baseLanguage;
   final Element? languageRoot;
+  final bool extendedStyles;
   late final _documentLanguage = _defaultLanguage();
   final _text = StringBuffer();
   final _ruby = <ReaderRuby>[];
@@ -37,6 +39,7 @@ class EpubRichText {
   bool _space = false;
   String _align = '', _writing = '';
   String _language = '';
+  bool _preformatted = false;
   double _opacity = 1;
   bool get isNotEmpty => _text.isNotEmpty;
   int get length => _text.length;
@@ -173,11 +176,23 @@ class EpubRichText {
         inherited(node, 'font-style') == 'oblique') {
       mask |= 2;
     }
-    if (inherited(node, 'text-decoration').contains('underline')) mask |= 4;
+    final decoration = inherited(node, 'text-decoration');
+    if (decoration.contains('underline')) mask |= 4;
+    if (extendedStyles && decoration.contains('line-through')) mask |= 8;
+    final authoredWeight = weight.isNotEmpty;
     for (var at = node; at != null; at = at.parent) {
       if ({'b', 'strong'}.contains(at.localName)) mask |= 1;
       if ({'i', 'em'}.contains(at.localName)) mask |= 2;
       if (at.localName == 'u') mask |= 4;
+      if (!extendedStyles) continue;
+      if ({'del', 's', 'strike'}.contains(at.localName)) mask |= 8;
+      if (at.localName == 'sup') mask |= 16;
+      if (at.localName == 'sub') mask |= 32;
+      // Heading weight is a default, not an override. Authored CSS wins.
+      if (!authoredWeight &&
+          const {'h1', 'h2', 'h3', 'h4', 'h5', 'h6'}.contains(at.localName)) {
+        mask |= 1;
+      }
     }
     return mask;
   }
@@ -195,11 +210,18 @@ class EpubRichText {
   }
 
   void appendStyled(String value, Element? node) {
-    final range = append(value);
+    final range = append(value, node: node);
     _mark(range.start, range.end, _mask(node));
   }
 
-  ({int start, int end}) append(String value) {
+  ({int start, int end}) append(String value, {Element? node}) {
+    if (extendedStyles && value.isNotEmpty && _insidePre(node)) {
+      _preformatted = true;
+      final start = _text.length;
+      _text.write(value);
+      _space = false;
+      return (start: start, end: _text.length);
+    }
     var start = -1;
     for (final token in RegExp(r'\s+|\S+').allMatches(value)) {
       final text = token.group(0)!;
@@ -213,6 +235,13 @@ class EpubRichText {
       _text.write(text);
     }
     return (start: start < 0 ? _text.length : start, end: _text.length);
+  }
+
+  bool _insidePre(Element? node) {
+    for (var at = node; at != null; at = at.parent) {
+      if (at.localName == 'pre') return true;
+    }
+    return false;
   }
 
   void ruby(Element node) {
@@ -238,9 +267,9 @@ class EpubRichText {
       var index = 0;
       for (final child in node.nodes) {
         if (child is Element && child.localName == 'rb') {
-          annotate(append(baseText(child)), readings[index++].text);
+          annotate(append(baseText(child), node: node), readings[index++].text);
         } else if (child is Text) {
-          append(child.text);
+          append(child.text, node: node);
         }
       }
     } else if (readings.isNotEmpty) {
@@ -253,6 +282,7 @@ class EpubRichText {
             child is Element && !{'rp', 'rtc'}.contains(child.localName)) {
           final range = append(
             child is Text ? child.text : baseText(child as Element),
+            node: node,
           );
           if (range.end > range.start) {
             base = (start: base?.start ?? range.start, end: range.end);
@@ -262,14 +292,16 @@ class EpubRichText {
     } else {
       // Use the first annotation layer; phonetics never enter copied/spoken prose.
       final layer = node.querySelector('rtc');
-      annotate(append(baseText(node)), layer?.text ?? '');
+      annotate(append(baseText(node), node: node), layer?.text ?? '');
     }
     _mark(start, _text.length, _mask(node));
   }
 
   void reference(Element node, String id) {
-    final text = node.text.trim();
-    final range = append(text.isEmpty ? '〔注〕' : text);
+    final text = extendedStyles && _insidePre(node)
+        ? node.text
+        : node.text.trim();
+    final range = append(text.isEmpty ? '〔注〕' : text, node: node);
     _mark(range.start, range.end, _mask(node));
     if (range.end > range.start) {
       _refs.add(ReaderNoteReference(range.start, range.end, id));
@@ -291,6 +323,7 @@ class EpubRichText {
         writing: _writing,
         language: _language,
         opacity: _opacity,
+        preformatted: _preformatted,
         ruby: List.unmodifiable(_ruby),
         references: List.unmodifiable(_refs),
         emphasis: List.unmodifiable(_emphasis),
@@ -301,6 +334,7 @@ class EpubRichText {
     _refs.clear();
     _emphasis.clear();
     _space = false;
+    _preformatted = false;
     return result;
   }
 }

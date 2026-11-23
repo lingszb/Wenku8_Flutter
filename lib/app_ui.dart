@@ -1360,7 +1360,6 @@ Widget sectionHeader(BuildContext context, String title, String subtitle) =>
         '使用方式' => '00 / READING MODE',
         '阅读偏好' => '01 / READING PROFILE',
         '阅读记录' || '最近阅读' => '02 / READING LOG',
-        '离线阅读' => '03 / LOCAL ARCHIVE',
         '玻璃外观' => '04 / OPTICAL SURFACE',
         '本地数据' => '05 / DATA MANAGEMENT',
         '性能诊断' => '06 / DIAGNOSTICS',

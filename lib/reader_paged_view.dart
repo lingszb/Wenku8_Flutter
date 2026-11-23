@@ -1615,7 +1615,10 @@ class _ReaderPagedViewState extends State<ReaderPagedView>
           ? name
           : '$name-$spread-$physicalLeaf',
     );
-    final count = widget.bookTitle == null
+    final count =
+        widget.bookTitle != null && !widget.preferences.showFooterPageCount
+        ? '${(fraction * 100).round()}%'
+        : widget.bookTitle == null
         ? perSpread == 1
               ? '${first + 1}/${pagination.pages.length}页 · ${(fraction * 100).round()}%'
               : '${first + 1}–${last + 1}/${pagination.pages.length}页 · ${(fraction * 100).round()}%'

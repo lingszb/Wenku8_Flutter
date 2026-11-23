@@ -8,10 +8,21 @@ import 'app_ui.dart';
 import 'local_platform.dart';
 import 'app_window_insets.dart';
 
-String readerInformationTitle(String title, int number) =>
-    RegExp(r'^第[零〇一二三四五六七八九十百千万两0-9]+[章话回节]').hasMatch(title.trimLeft())
-    ? title
-    : '第$number话 · $title';
+String readerInformationTitle(
+  String title,
+  int number, {
+  bool showChapterNumber = true,
+  int? volume,
+}) {
+  final chapterNumber =
+      showChapterNumber &&
+      !RegExp(r'^第[零〇一二三四五六七八九十百千万两0-9]+[章话回节]').hasMatch(title.trimLeft());
+  return [
+    if (volume != null) '第$volume卷',
+    if (chapterNumber) '第$number话',
+    if (title.trim().isNotEmpty) title,
+  ].join(' · ');
+}
 
 /// Only this small status line updates on a system time/battery broadcast. Reading
 /// text, pagination and glass never rebuild to tick a clock.

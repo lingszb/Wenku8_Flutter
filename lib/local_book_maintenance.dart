@@ -43,11 +43,13 @@ Future<Map<String, dynamic>> _upgradeStoredEpub(
   final record =
       jsonDecode(await metadata.readAsString()) as Map<String, dynamic>;
   final source = Map<String, dynamic>.from(record['source']);
-  if (source['richText'] == 2) return source;
+  final oldVersion = source['richText'] as int? ?? 0;
+  if (oldVersion >= epubRichTextVersion) return source;
   final oldPrefix =
       {
         'layout-rich-v1',
         'layout-rich-v2',
+        'layout-rich-v3',
         'layout-markup-v1',
       }.contains(source['layoutFolder'])
       ? '${source['layoutFolder']}/'
@@ -65,8 +67,8 @@ Future<Map<String, dynamic>> _upgradeStoredEpub(
       source['digest'],
       archive: archive,
       normalizeMarkup: source['epubMarkup'] == epubMarkupVersion,
-      preserveRichText: source['richText'] == 1,
-      richLayoutLevel: 1,
+      preserveRichText: oldVersion >= 1,
+      richLayoutLevel: max(1, oldVersion),
       autoTitles: job.options.autoTitles,
       mergeUnlistedIllustrations: job.options.inlineEpubImages,
       saveBody: (i, body) =>
@@ -82,9 +84,9 @@ Future<Map<String, dynamic>> _upgradeStoredEpub(
       throw const FormatException('旧目录与原书不一致，已保留原书和阅读记录');
     }
     for (var i = 0; i < chapters.length; i++) {
-      final before = await File(
-        '${folder.path}/${oldPrefix}c${chapters[i]['id']}.txt',
-      ).readAsString();
+      final before = await readLocalText(
+        File('${folder.path}/${oldPrefix}c${chapters[i]['id']}.txt'),
+      );
       final restored = await File(
         '${staging.path}/old-${i + 1}.txt',
       ).readAsString();
@@ -111,39 +113,91 @@ Future<Map<String, dynamic>> _upgradeStoredEpub(
     final targets = {
       for (final (i, origin) in rich.origins.indexed) origin: i + 1,
     };
+    final novel = Map<String, dynamic>.from(record['novel']);
+    final navigation = novel['navigation'] == null
+        ? const BookNavigation([])
+        : BookNavigation.fromJson(novel['navigation']);
+    final oldTargets = <int, Set<BookReadingTarget>>{};
+    for (final target in [
+      ...navigation.targets.values,
+      ...navigation.entries.map((entry) => entry.target),
+    ]) {
+      oldTargets.putIfAbsent(target.chapterId, () => {}).add(target);
+    }
+    final remapped = <BookReadingTarget, BookReadingTarget>{};
+    final chapterIds = <int, int>{};
     for (var i = 0; i < chapters.length; i++) {
+      final id = chapters[i]['id'] as int;
       final before = ReaderRichBody.decode(
-        await File(
-          '${folder.path}/${oldPrefix}c${chapters[i]['id']}.txt',
-        ).readAsString(),
+        await readLocalText(File('${folder.path}/${oldPrefix}c$id.txt')),
       );
       final index = targets[old.origins[i]];
-      // A standalone notes-only section remains in its old directory slot.
-      // No chapter ID or series reference is removed by an enrichment.
+      // Standalone notes keep their existing chapter slot.
+      if (index != null) chapterIds[index] = id;
       final next = index == null
           ? before
           : ReaderRichBody.decode(
               await File('${staging.path}/new-$index.txt').readAsString(),
             );
+      final oldRevision = before.revision.isEmpty && oldVersion >= 1
+          ? 'epub-rich-v$oldVersion'
+          : before.revision;
+      final coordinates = ReaderCoordinateMap.between(
+        before.paragraphs,
+        next.paragraphs,
+        sourceRevision: oldRevision,
+        previous: before.coordinateMap,
+      );
+      for (final target in oldTargets[id] ?? const <BookReadingTarget>{}) {
+        final at = coordinates.resolve(
+          paragraphs: next.paragraphs,
+          paragraph: target.paragraph,
+          offset: target.offset,
+          revision: oldRevision,
+        );
+        remapped[target] = BookReadingTarget(
+          id,
+          paragraph: at.paragraph,
+          offset: at.offset,
+        );
+      }
       final body = ReaderRichBody(
         next.paragraphs,
         formats: next.formats,
         notes: next.notes,
-        revision: 'epub-rich-v2',
-        coordinateMap: ReaderCoordinateMap.between(
-          before.paragraphs,
-          next.paragraphs,
-          sourceRevision: before.revision,
-          previous: before.coordinateMap,
-        ),
+        revision: 'epub-rich-v$epubRichTextVersion',
+        coordinateMap: coordinates,
       ).encode();
-      ReaderRichBody.decode(
-        body,
-      ); // Validate the exact persisted map, not a second parser result.
-      await File(
-        '${staging.path}/c${chapters[i]['id']}.txt',
-      ).writeAsString(body, flush: true);
+      ReaderRichBody.decode(body);
+      await File('${staging.path}/c$id.txt').writeAsString(body, flush: true);
     }
+    final freshNavigation = rich.novel.navigation;
+    novel['navigation'] = BookNavigation(
+      [
+        for (final entry in navigation.entries)
+          BookNavigationEntry(
+            entry.title,
+            remapped[entry.target] ?? entry.target,
+            depth: entry.depth,
+          ),
+        if (navigation.entries.isEmpty && freshNavigation != null)
+          for (final entry in freshNavigation.entries)
+            if (chapterIds[entry.target.chapterId] case final id?)
+              BookNavigationEntry(
+                entry.title,
+                entry.target.inChapter(id),
+                depth: entry.depth,
+              ),
+      ],
+      targets: {
+        for (final entry in navigation.targets.entries)
+          entry.key: remapped[entry.value] ?? entry.value,
+        if (freshNavigation != null)
+          for (final entry in freshNavigation.targets.entries)
+            if (chapterIds[entry.value.chapterId] case final id?)
+              entry.key: entry.value.inChapter(id),
+      },
+    ).toJson();
     await for (final file in staging.list()) {
       if (file is File &&
           RegExp(
@@ -154,11 +208,13 @@ Future<Map<String, dynamic>> _upgradeStoredEpub(
     }
     final mediaFile = File('${folder.path}/media.json');
     final entries = <String, dynamic>{};
+    final mediaRecord = <String, dynamic>{'version': 1};
     if (await mediaFile.exists()) {
       final media = jsonDecode(await mediaFile.readAsString());
       if (media is! Map || media['version'] != 1 || media['entries'] is! Map) {
         throw const FormatException('旧插图索引需要修复，已保留原书');
       }
+      mediaRecord.addAll(Map<String, dynamic>.from(media));
       entries.addAll(Map<String, dynamic>.from(media['entries']));
     }
     for (final entry in names.entries) {
@@ -167,19 +223,23 @@ Future<Map<String, dynamic>> _upgradeStoredEpub(
       }
       entries[entry.value] = entry.key;
     }
-    await _maintenanceRecord(mediaFile, {'version': 1, 'entries': entries});
-    final target = Directory('${folder.path}/layout-rich-v2');
+    await _maintenanceRecord(mediaFile, {...mediaRecord, 'entries': entries});
+    final target = Directory('${folder.path}/layout-rich-v3');
     if (await target.exists()) await target.delete(recursive: true);
     await staging.rename(target.path);
     final changed = {
       ...source,
-      'richText': 2,
-      'layoutFolder': 'layout-rich-v2',
+      'richText': epubRichTextVersion,
+      'layoutFolder': 'layout-rich-v3',
       'publisherSpacing': 1,
       'publisherLanguages': epubPublisherLanguageVersion,
       'imageSizing': 1,
     };
-    await _maintenanceRecord(metadata, {...record, 'source': changed});
+    final nextRecord = {...record, 'novel': novel, 'source': changed};
+    if (utf8.encode(jsonEncode(nextRecord)).length > _maxBookRecordBytes) {
+      throw const FormatException('排版目录超过 4 MiB，已保留现有排版');
+    }
+    await _maintenanceRecord(metadata, nextRecord);
     return changed;
   } finally {
     stream.closeSync();
@@ -285,6 +345,7 @@ Future<int> _compactStoredEpub(
     if ({
       'layout-rich-v1',
       'layout-rich-v2',
+      'layout-rich-v3',
       'layout-markup-v1',
     }.contains(source['layoutFolder'])) {
       final chapters = metadata['chapters'] as List;
@@ -308,21 +369,24 @@ Future<int> _compactStoredEpub(
           freed += size;
         }
       }
-      if (source['layoutFolder'] == 'layout-rich-v2') {
-        // The previous rich generation is also recoverable after all active
-        // chapters and chained coordinate maps have been validated.
-        final previous = Directory('${folder.path}/layout-rich-v1');
-        if (await previous.exists()) {
-          for (final chapter in chapters) {
-            final file = File('${previous.path}/c${chapter['id']}.txt');
-            if (await file.exists()) {
-              final size = await file.length();
-              await file.delete();
-              freed += size;
-            }
+      // Older rich generations are also recoverable after all active
+      // chapters and chained coordinate maps have been validated.
+      for (final name in switch (source['layoutFolder']) {
+        'layout-rich-v2' => const ['layout-rich-v1'],
+        'layout-rich-v3' => const ['layout-rich-v2', 'layout-rich-v1'],
+        _ => const <String>[],
+      }) {
+        final previous = Directory('${folder.path}/$name');
+        if (!await previous.exists()) continue;
+        for (final chapter in chapters) {
+          final file = File('${previous.path}/c${chapter['id']}.txt');
+          if (await file.exists()) {
+            final size = await file.length();
+            await file.delete();
+            freed += size;
           }
-          if (await previous.list().isEmpty) await previous.delete();
         }
+        if (await previous.list().isEmpty) await previous.delete();
       }
     }
     return freed;
@@ -340,12 +404,10 @@ extension LocalBookMaintenance on LocalBookStore {
         : book.chapters.elementAtOrNull(position['chapter'] as int? ?? 0);
     if (chapter == null) return false;
     final base = _seriesChapters[id]?[chapter.id]?.bookId ?? id;
-    if (position['contentRevision'] == 'epub-rich-v2' &&
-        _sources[base]?['layoutFolder'] != 'layout-markup-v1') {
-      return false;
-    }
-    return _sources[base]?['richText'] == 2 ||
-        _sources[base]?['layoutFolder'] == 'layout-markup-v1';
+    final source = _sources[base];
+    final version = source?['richText'] as int? ?? 0;
+    if (source?['layoutFolder'] == 'layout-markup-v1') return true;
+    return version >= 2 && position['contentRevision'] != 'epub-rich-v$version';
   }
 
   Future<Map<String, dynamic>> resolveReadingCoordinates(
@@ -443,7 +505,7 @@ extension LocalBookMaintenance on LocalBookStore {
       }
       switch (task) {
         case LocalMaintenanceTask.layout:
-          if (source['richText'] == 2) {
+          if ((source['richText'] as int? ?? 0) >= epubRichTextVersion) {
             result = const LocalMaintenanceResult('已使用新版排版');
             break;
           }
@@ -453,6 +515,17 @@ extension LocalBookMaintenance on LocalBookStore {
             options: importOptionsFor(id),
           ));
           _sources[id] = next;
+          final record =
+              jsonDecode(
+                    await File(
+                      '${directory.path}/$id/book.json',
+                    ).readAsString(),
+                  )
+                  as Map<String, dynamic>;
+          _books[id] = Novel.fromSnapshot(
+            Map<String, dynamic>.from(record['novel']),
+          ).withChapters(before.chapters);
+          await _refreshSeries(originals: {id});
           result = const LocalMaintenanceResult(
             '排版已升级，目录与旧定位保留',
             changed: true,

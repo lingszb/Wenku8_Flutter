@@ -80,7 +80,7 @@ class _ReaderEmphasisIndex {
           active[flag] = count;
         }
       } while (i < events.length && events[i].$1 == offset);
-      // EPUB has three flags (eight possible masks). Count complete masks so
+      // EPUB shares six flags (64 possible masks). Count complete masks so
       // ending one overlapping run never clears a flag still used by another.
       var next = 0;
       for (final flag in active.keys) {
@@ -238,6 +238,8 @@ class ReaderRichParagraph {
     this.spacing = const ReaderBlockSpacing(),
     this.language = '',
     this.opacity = 1,
+    this.marker = '',
+    this.preformatted = false,
   });
   final String alignment, writing;
   final bool rule;
@@ -248,6 +250,16 @@ class ReaderRichParagraph {
   final ReaderBlockSpacing spacing;
   final String language;
   final double opacity;
+
+  /// A list marker such as `1.` or `•`. It is layout decoration: the paragraph
+  /// text keeps its source coordinates and the marker is never part of a note,
+  /// ruby or source character offset.
+  final String marker;
+
+  /// `<pre>` keeps authored line breaks and spacing. It never receives the
+  /// reader's synthetic first-line indent.
+  final bool preformatted;
+
   ReaderRichParagraph withReferences(List<ReaderNoteReference> value) =>
       ReaderRichParagraph(
         alignment: alignment,
@@ -261,6 +273,8 @@ class ReaderRichParagraph {
         spacing: spacing,
         language: language,
         opacity: opacity,
+        marker: marker,
+        preformatted: preformatted,
       );
   ReaderRichParagraph withBreaks({bool before = false, bool after = false}) =>
       ReaderRichParagraph(
@@ -275,6 +289,8 @@ class ReaderRichParagraph {
         spacing: spacing,
         language: language,
         opacity: opacity,
+        marker: marker,
+        preformatted: preformatted,
       );
   ReaderRichParagraph withSpacing(ReaderBlockSpacing value) =>
       ReaderRichParagraph(
@@ -289,6 +305,8 @@ class ReaderRichParagraph {
         spacing: spacing.merge(value),
         language: language,
         opacity: opacity,
+        marker: marker,
+        preformatted: preformatted,
       );
   ReaderRichParagraph replaceSpacing(ReaderBlockSpacing value) =>
       ReaderRichParagraph(
@@ -303,6 +321,8 @@ class ReaderRichParagraph {
         spacing: value,
         language: language,
         opacity: opacity,
+        marker: marker,
+        preformatted: preformatted,
       );
   ReaderRichParagraph withPublisherLanguage(ReaderRichParagraph value) =>
       ReaderRichParagraph(
@@ -317,7 +337,26 @@ class ReaderRichParagraph {
         spacing: spacing,
         language: value.language,
         opacity: value.opacity,
+        marker: marker,
+        preformatted: preformatted,
       );
+  ReaderRichParagraph withMarker(String value) => value.isEmpty
+      ? this
+      : ReaderRichParagraph(
+          alignment: alignment,
+          writing: writing,
+          rule: rule,
+          ruby: ruby,
+          references: references,
+          emphasis: emphasis,
+          breakBefore: breakBefore,
+          breakAfter: breakAfter,
+          spacing: spacing,
+          language: language,
+          opacity: opacity,
+          marker: value,
+          preformatted: preformatted,
+        );
   ReaderRichParagraph get withoutSpacing =>
       spacing.empty ? this : replaceSpacing(const ReaderBlockSpacing());
   double gapBefore(
@@ -336,6 +375,8 @@ class ReaderRichParagraph {
     overrideGap: overrideGap,
   );
   bool get allowsIndent =>
+      marker.isEmpty &&
+      !preformatted &&
       !const {'center', 'right', 'end'}.contains(alignment);
   bool get empty =>
       alignment.isEmpty &&
@@ -348,7 +389,9 @@ class ReaderRichParagraph {
       !breakAfter &&
       spacing.empty &&
       language.isEmpty &&
-      opacity == 1;
+      opacity == 1 &&
+      marker.isEmpty &&
+      !preformatted;
   int emphasisAt(int offset) {
     var mask = 0;
     for (final run in emphasis) {
@@ -357,15 +400,34 @@ class ReaderRichParagraph {
     return mask;
   }
 
-  static TextStyle emphasized(TextStyle base, int mask) => mask == 0
-      ? base
-      : base.copyWith(
-          fontWeight: mask & 1 != 0 ? FontWeight.w700 : base.fontWeight,
-          fontStyle: mask & 2 != 0 ? FontStyle.italic : base.fontStyle,
-          decoration: mask & 4 != 0
-              ? TextDecoration.underline
-              : base.decoration,
-        );
+  static TextStyle emphasized(TextStyle base, int mask) {
+    if (mask == 0) return base;
+    var decoration = base.decoration;
+    if (mask & 4 != 0) {
+      decoration = decoration == null
+          ? TextDecoration.underline
+          : TextDecoration.combine([decoration, TextDecoration.underline]);
+    }
+    if (mask & 8 != 0) {
+      decoration = decoration == null
+          ? TextDecoration.lineThrough
+          : TextDecoration.combine([decoration, TextDecoration.lineThrough]);
+    }
+    final features = <FontFeature>[
+      ...?base.fontFeatures,
+      // sup/sub have no baseline offset in TextStyle. Ask the font for its
+      // OpenType feature; fonts without it stay readable at the base size.
+      if (mask & 16 != 0) FontFeature.superscripts(),
+      if (mask & 32 != 0) FontFeature.subscripts(),
+    ];
+    return base.copyWith(
+      fontWeight: mask & 1 != 0 ? FontWeight.w700 : base.fontWeight,
+      fontStyle: mask & 2 != 0 ? FontStyle.italic : base.fontStyle,
+      decoration: decoration,
+      fontFeatures: features.isEmpty ? base.fontFeatures : features,
+    );
+  }
+
   List<InlineSpan> spans(String text) {
     if (emphasis.isEmpty) return [TextSpan(text: text)];
     final indexed = _ReaderEmphasisIndex(emphasis);
@@ -416,6 +478,8 @@ class ReaderRichParagraph {
     if (opacity != 1) 'opacity': opacity,
     if (alignment.isNotEmpty) 'align': alignment,
     if (writing.isNotEmpty) 'writing': writing,
+    if (marker.isNotEmpty) 'marker': marker,
+    if (preformatted) 'pre': true,
     if (rule) 'rule': true,
     if (breakBefore) 'breakBefore': true,
     if (breakAfter) 'breakAfter': true,
@@ -431,6 +495,8 @@ class ReaderRichParagraph {
     writing: writing,
     language: language,
     opacity: opacity,
+    marker: start == 0 ? marker : '',
+    preformatted: preformatted,
     rule: rule,
     breakBefore: breakBefore && start == 0,
     breakAfter: breakAfter,
@@ -499,9 +565,12 @@ class ReaderRichParagraph {
         r['start'] >= 0 &&
         r['end'] > r['start'] &&
         r['end'] <= length;
+    final marker = value['marker'] is String ? value['marker'] as String : '';
     return ReaderRichParagraph(
       alignment: '${value['align'] ?? ''}',
       writing: '${value['writing'] ?? ''}',
+      marker: marker.length <= 32 ? marker : '',
+      preformatted: value['pre'] == true,
       language: readerLanguageCode('${value['lang'] ?? ''}'),
       opacity:
           value['opacity'] is num &&
@@ -521,7 +590,7 @@ class ReaderRichParagraph {
               range(r) &&
               r['mask'] is int &&
               r['mask'] >= 0 &&
-              r['mask'] <= 7)
+              r['mask'] <= 63)
             ReaderEmphasis(r['start'], r['end'], r['mask']),
       ],
       ruby: [
@@ -570,6 +639,8 @@ class ReaderRichBody {
     }
     final meta = jsonEncode({
       'count': paragraphs.length,
+      if (paragraphs.any((p) => p.contains('\n\n') || p.endsWith('\n')))
+        'lengths': paragraphs.map((p) => p.length).toList(),
       'blocks': {for (final e in formats.entries) '${e.key}': e.value.toJson()},
       'notes': notes,
       if (revision.isNotEmpty) 'revision': revision,
@@ -585,25 +656,44 @@ class ReaderRichBody {
         notes = <String, String>{};
     var revision = '';
     ReaderCoordinateMap? coordinates;
-    for (final part in source.split('\n\n')) {
-      if (!part.startsWith(prefix) || !part.endsWith('-->')) {
-        paragraphs.add(part);
-        continue;
-      }
-      final value = jsonDecode(
-        utf8.decode(
-          base64Url.decode(part.substring(prefix.length, part.length - 3)),
-        ),
-      );
+    final metadata = RegExp(r'\n\n<!--reader-rich-v1:([^\n]*)-->(?=\n\n|$)');
+    var start = 0;
+    for (final match in metadata.allMatches(source)) {
+      final body = source.substring(start, match.start);
+      start = match.end == source.length ? match.end : match.end + 2;
+      final value = jsonDecode(utf8.decode(base64Url.decode(match[1]!)));
       if (value is! Map ||
           value['count'] is! int ||
-          value['count'] > paragraphs.length ||
           value['count'] < 0 ||
           value['blocks'] is! Map ||
           value['notes'] is! Map) {
         throw const FormatException('原书排版数据格式有误');
       }
-      final base = paragraphs.length - (value['count'] as int);
+      final count = value['count'] as int;
+      final lengths = value['lengths'];
+      if (lengths == null) {
+        if (count > 0 || body.isNotEmpty) paragraphs.addAll(body.split('\n\n'));
+      } else {
+        if (lengths is! List || lengths.length != count || count == 0) {
+          throw const FormatException('原书段落长度有误');
+        }
+        var offset = 0;
+        for (final (index, width) in lengths.indexed) {
+          if (width is! int || width < 0 || width > body.length - offset) {
+            throw const FormatException('原书段落长度有误');
+          }
+          final end = offset + width;
+          paragraphs.add(body.substring(offset, end));
+          if (index == count - 1
+              ? end != body.length
+              : !body.startsWith('\n\n', end)) {
+            throw const FormatException('原书段落分隔有误');
+          }
+          offset = end + 2;
+        }
+      }
+      final base = paragraphs.length - count;
+      if (base < 0) throw const FormatException('原书排版数据格式有误');
       revision = value['revision'] is String
           ? value['revision']
           : 'epub-rich-v1';
@@ -630,6 +720,9 @@ class ReaderRichBody {
           notes[e.key] = e.value;
         }
       }
+    }
+    if (start < source.length) {
+      paragraphs.addAll(source.substring(start).split('\n\n'));
     }
     return ReaderRichBody(
       paragraphs,

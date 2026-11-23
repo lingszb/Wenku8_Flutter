@@ -378,7 +378,9 @@ Future<ReaderPagination?> paginateReader({
     // untouched, and keep image sizes and source anchors unchanged.
     var leafFragments = fragments;
     if (!vertical && fragments.every((fragment) => fragment.image)) {
-      final top = fragments.map((fragment) => fragment.rect.top).reduce(math.min);
+      final top = fragments
+          .map((fragment) => fragment.rect.top)
+          .reduce(math.min);
       final bottom = fragments
           .map((fragment) => fragment.rect.bottom)
           .reduce(math.max);
@@ -555,7 +557,8 @@ Future<ReaderPagination?> paginateReader({
       if (text.isEmpty) continue;
       if (!vertical) {
         final indent = preferences.indent && format.allowsIndent;
-        final prefix = indent ? readerIndentPlaceholder : '';
+        final prefix =
+            '${indent ? readerIndentPlaceholder : ''}${format.marker}';
         final display = '$prefix$text';
         var metrics = measured.horizontal[index];
         if (metrics == null) {
@@ -565,6 +568,7 @@ Future<ReaderPagination?> paginateReader({
             children: format.spans(text),
             style: paragraphStyle,
             indent: indent,
+            marker: format.marker,
           );
           final builder = ui.ParagraphBuilder(
             paragraphStyle.getParagraphStyle(

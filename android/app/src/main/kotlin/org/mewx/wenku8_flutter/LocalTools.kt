@@ -1,6 +1,7 @@
 package org.mewx.wenku8_flutter
 
 import android.app.Activity
+import android.app.usage.StorageStatsManager
 import android.Manifest
 import android.content.Intent
 import android.content.ClipData
@@ -8,6 +9,7 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.provider.DocumentsContract
 import android.os.Build
+import android.os.StatFs
 import android.view.WindowManager
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
@@ -32,8 +34,40 @@ class LocalTools(private val activity: Activity) : MethodChannel.MethodCallHandl
         private const val MAX_BYTES = 4 * 1024 * 1024
     }
 
+    private fun storageUsage(result: MethodChannel.Result) {
+        val context = activity.applicationContext
+        io.execute {
+            val usage = mutableMapOf<String, Long>()
+            val info = context.applicationInfo
+            try {
+                val volume = StatFs(info.dataDir)
+                usage["phoneTotal"] = volume.totalBytes
+                usage["phoneAvailable"] = volume.availableBytes
+            } catch (_: IllegalArgumentException) {
+                // App stats may still be available.
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                try {
+                    val manager = context.getSystemService(StorageStatsManager::class.java)
+                    val stats = manager?.queryStatsForUid(info.storageUuid, info.uid)
+                    if (stats != null) {
+                        usage["appCode"] = stats.appBytes
+                        usage["appData"] = (stats.dataBytes - stats.cacheBytes).coerceAtLeast(0)
+                        usage["appCache"] = stats.cacheBytes
+                    }
+                } catch (_: java.io.IOException) {
+                    // Leave app stats absent if Android cannot query this volume.
+                } catch (_: SecurityException) {
+                    // Some devices restrict access to system storage statistics.
+                }
+            }
+            activity.runOnUiThread { result.success(usage) }
+        }
+    }
+
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
         when (call.method) {
+            "storageUsage" -> storageUsage(result)
             "getKeepScreenOn" -> result.success(
                 activity.window.attributes.flags and WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON != 0
             )

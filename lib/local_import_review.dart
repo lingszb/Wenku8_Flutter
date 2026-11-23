@@ -17,10 +17,12 @@ class LocalImportReview extends StatefulWidget {
     required this.books,
     required this.library,
     required this.report,
+    this.mergeOnly = false,
   });
   final LocalBookStore books;
   final LibraryState library;
   final LocalImportReport report;
+  final bool mergeOnly;
   @override
   State<LocalImportReview> createState() => _LocalImportReviewState();
 }
@@ -117,9 +119,9 @@ class _LocalImportReviewState extends State<LocalImportReview> {
               label: '返回',
               onPressed: _busy ? null : () => Navigator.pop(context),
             ),
-            title: const ArchiveRouteTitle(
-              title: '导入完成',
-              code: 'LOCAL / IMPORT',
+            title: ArchiveRouteTitle(
+              title: widget.mergeOnly ? '推荐合并' : '导入完成',
+              code: widget.mergeOnly ? '' : 'LOCAL / IMPORT',
             ),
           ),
           body: Center(
@@ -136,7 +138,11 @@ class _LocalImportReviewState extends State<LocalImportReview> {
                 ),
                 children: [
                   AppText(
-                    widget.report.summary,
+                    widget.mergeOnly
+                        ? (_groups.isEmpty
+                              ? '没有找到可合并的同系列分卷'
+                              : '找到 ${_groups.length} 组同系列分卷')
+                        : widget.report.summary,
                     style: const TextStyle(fontSize: 17, height: 1.6),
                   ),
                   if (_groups.isNotEmpty) ...[
