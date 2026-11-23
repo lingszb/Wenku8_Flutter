@@ -12,6 +12,7 @@ TextSpan readerParagraphSpan({
   required List<InlineSpan> children,
   required TextStyle style,
   required bool indent,
+  String marker = '',
   double? continuationWidth,
 }) => TextSpan(
   style: style,
@@ -25,6 +26,9 @@ TextSpan readerParagraphSpan({
           child: SizedBox(width: (style.fontSize ?? 19) * 2, height: 0),
         ),
       ),
+    // A list marker is decoration, not source text. It follows the same
+    // geometry-only prefix contract as the first-line indent.
+    if (marker.isNotEmpty) TextSpan(text: marker),
     ...children,
     if (continuationWidth != null)
       WidgetSpan(

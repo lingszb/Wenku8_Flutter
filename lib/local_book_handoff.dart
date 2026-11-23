@@ -14,7 +14,7 @@ class LocalHandoffFile {
     'length': length,
   };
   static bool validName(String name) => RegExp(
-    r'^(book\.json|original|decoded\.txt|media\.json|((layout-rich-v[12]|layout-markup-v1)/)?c[1-9][0-9]{0,5}\.txt|(cover|cover-custom-[0-9]+|img-[0-9]+)\.(png|jpg|jpeg|webp|gif))$',
+    r'^(book\.json|original|decoded\.txt|media\.json|((layout-rich-v[123]|layout-markup-v1)/)?c[1-9][0-9]{0,5}\.txt|(cover|cover-custom-[0-9]+|img-[0-9]+)\.(png|jpg|jpeg|webp|gif))$',
   ).hasMatch(name);
   static int limit(String name) => switch (name) {
     'book.json' => 4 * 1024 * 1024,
@@ -172,7 +172,12 @@ Future<LocalBookHandoff> _scanLocalHandoff(
     final folder = Directory('${input.root}/$id');
     final upgraded =
         manifest.identities.containsKey(id) &&
-        {'layout-rich-v1', 'layout-rich-v2', 'layout-markup-v1'}.contains(
+        {
+          'layout-rich-v1',
+          'layout-rich-v2',
+          'layout-rich-v3',
+          'layout-markup-v1',
+        }.contains(
           (jsonDecode(
                 await File('${folder.path}/book.json').readAsString(),
               )['source']
@@ -245,7 +250,7 @@ Future<LocalBookHandoff> _scanLocalHandoff(
       source['name'] is! String ||
       source['name'].length > 2048 ||
       source['parser'] != null && ![1, 2, 3].contains(source['parser']) ||
-      source['richText'] != null && ![1, 2].contains(source['richText'])) {
+      source['richText'] != null && ![1, 2, 3].contains(source['richText'])) {
     bad();
   }
   final digest = source['digest'] as String;
@@ -270,6 +275,7 @@ Future<LocalBookHandoff> _scanLocalHandoff(
       !{
         'layout-rich-v1',
         'layout-rich-v2',
+        'layout-rich-v3',
         'layout-markup-v1',
       }.contains(source['layoutFolder'])) {
     bad();
@@ -278,6 +284,7 @@ Future<LocalBookHandoff> _scanLocalHandoff(
       {
         'layout-rich-v1',
         'layout-rich-v2',
+        'layout-rich-v3',
         'layout-markup-v1',
       }.contains(source['layoutFolder'])
       ? '${source['layoutFolder']}/'

@@ -22,9 +22,15 @@ Future<void> openLocalBookBatch(
   required LocalBookStore books,
   required LibraryState library,
   Set<int>? selected,
+  BookDocuments? documents,
 }) => pushNovelPage<void>(
   context,
-  LocalBookBatchPage(books: books, library: library, selected: selected),
+  LocalBookBatchPage(
+    books: books,
+    library: library,
+    selected: selected,
+    documents: documents,
+  ),
   reduceMotion: library.reduceMotion,
 );
 
@@ -44,12 +50,17 @@ class LocalBookBatchPage extends StatefulWidget {
   State<LocalBookBatchPage> createState() => _LocalBookBatchPageState();
 }
 
+enum _BatchTask { volumes, archive, category, cover }
+
+enum _CoverMode { shared, ordered }
+
 class _LocalBookBatchPageState extends State<LocalBookBatchPage> {
   late final _selected = {...?widget.selected};
   final _search = TextEditingController();
   final _results = <String>[];
   bool _busy = false, _stop = false, _hidden = false, _stoppable = false;
   int _done = 0, _total = 0;
+  _BatchTask _task = _BatchTask.volumes;
 
   @override
   void dispose() {
@@ -57,15 +68,24 @@ class _LocalBookBatchPageState extends State<LocalBookBatchPage> {
     super.dispose();
   }
 
-  List<Novel> get _targets =>
-      widget.books.books.where((book) => _selected.contains(book.id)).toList();
+  bool get _archived => _task == _BatchTask.archive && _hidden;
+
+  List<Novel> get _targets {
+    if (_selected.isEmpty) return [];
+    final available = {
+      for (final book in widget.books.books)
+        if (widget.library.localBookVisible(book.id) != _archived)
+          book.id: book,
+    };
+    return _selected.map((id) => available[id]).whereType<Novel>().toList();
+  }
 
   List<Novel> get _visible {
     final words = _search.text.trim().toLowerCase().split(RegExp(r'\s+'));
     return widget.books.books.where((book) {
       final hidden = !widget.library.localBookVisible(book.id);
       final text = '${book.title} ${book.author}'.toLowerCase();
-      return hidden == _hidden && words.every(text.contains);
+      return hidden == _archived && words.every(text.contains);
     }).toList();
   }
 
@@ -80,6 +100,7 @@ class _LocalBookBatchPageState extends State<LocalBookBatchPage> {
 
   Future<void> _run(Future<void> Function() action) async {
     if (_busy || _targets.isEmpty) return;
+    FocusScope.of(context).unfocus();
     setState(() {
       _busy = true;
       _stop = false;
@@ -191,27 +212,32 @@ class _LocalBookBatchPageState extends State<LocalBookBatchPage> {
     }
   }
 
-  Future<void> _remove() async {
-    final choice = await showJellySheet<LocalBookRemoval>(
-      context: context,
-      reduceMotion: widget.library.reduceMotion,
-      heightFactor: .48,
-      builder: (sheet) => ListView(
-        padding: const EdgeInsets.all(24),
-        children: [
-          const ArchiveSection(title: '移除所选书籍', code: 'LOCAL / REMOVE'),
-          const AppText('仅移出保留文件，可从“已移出书架”中恢复。删除本机文件只处理 App 管理的副本，原文件和阅读记录保留。'),
-          GlassTextButton(
-            onPressed: () => Navigator.pop(sheet, LocalBookRemoval.shelfOnly),
-            child: const AppText('仅移出书架'),
-          ),
-          GlassTextButton(
-            onPressed: () => Navigator.pop(sheet, LocalBookRemoval.files),
-            child: const AppText('同时删除本机文件'),
-          ),
-        ],
-      ),
-    );
+  Future<void> _remove({required bool archived}) async {
+    final choice = archived
+        ? LocalBookRemoval.files
+        : await showJellySheet<LocalBookRemoval>(
+            context: context,
+            reduceMotion: widget.library.reduceMotion,
+            heightFactor: .48,
+            builder: (sheet) => ListView(
+              padding: const EdgeInsets.all(24),
+              children: [
+                const ArchiveSection(title: '移除所选书籍', code: 'LOCAL / REMOVE'),
+                const AppText(
+                  '仅移出保留文件，可从“已移出书架”中恢复。删除本机文件只处理 App 管理的副本，原文件和阅读记录保留。',
+                ),
+                GlassTextButton(
+                  onPressed: () =>
+                      Navigator.pop(sheet, LocalBookRemoval.shelfOnly),
+                  child: const AppText('仅移出书架'),
+                ),
+                GlassTextButton(
+                  onPressed: () => Navigator.pop(sheet, LocalBookRemoval.files),
+                  child: const AppText('同时删除本机文件'),
+                ),
+              ],
+            ),
+          );
     if (!mounted || choice == null) return;
     await _run(() async {
       final ids = _targets.map((b) => b.id).toSet();
@@ -252,22 +278,104 @@ class _LocalBookBatchPageState extends State<LocalBookBatchPage> {
   });
 
   Future<void> _covers({bool restore = false}) => _run(() async {
-    _stoppable = true;
     final books = _targets;
     final documents = widget.documents ?? BookDocuments();
-    final image = restore ? null : await documents.pickImage();
-    if (!restore && image == null) return;
+    final images = <BookDocumentSelection>[];
     try {
-      final path = image?.path;
-      if (!restore && (path == null || path.isEmpty)) {
-        throw const FormatException('图片不可读取，请重新选择');
+      _CoverMode? mode;
+      if (!restore) {
+        mode = await showDialog<_CoverMode>(
+          context: context,
+          builder: (dialog) => SimpleDialog(
+            title: const Text('批量更换封面'),
+            children: [
+              SimpleDialogOption(
+                onPressed: () => Navigator.pop(dialog, _CoverMode.shared),
+                child: const Text('共用一张图片'),
+              ),
+              SimpleDialogOption(
+                onPressed: () => Navigator.pop(dialog, _CoverMode.ordered),
+                child: const Text('按勾选顺序逐本配图'),
+              ),
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+                child: Text('第 1 本勾选的书使用第 1 张图片，以此类推。全选时按当前列表顺序加入队列。'),
+              ),
+            ],
+          ),
+        );
+        if (!mounted || mode == null) return;
+        final ordered = mode == _CoverMode.ordered;
+        final imageCount = ordered ? books.length : 1;
+        for (var index = 0; index < imageCount; index++) {
+          if (ordered) {
+            final proceed = await showDialog<bool>(
+              context: context,
+              builder: (dialog) => AlertDialog(
+                title: Text('选择图片 ${index + 1} / $imageCount'),
+                content: SingleChildScrollView(child: Text(books[index].title)),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(dialog, false),
+                    child: const Text('取消队列'),
+                  ),
+                  TextButton(
+                    onPressed: () => Navigator.pop(dialog, true),
+                    child: const Text('选择图片'),
+                  ),
+                ],
+              ),
+            );
+            if (!mounted || proceed != true) return;
+          }
+          final image = await documents.pickImage();
+          if (image == null) return;
+          images.add(image);
+          if (!mounted) return;
+          if (image.path?.isNotEmpty != true) {
+            throw FormatException(image.error ?? '图片不可读取，请重新选择');
+          }
+        }
+        final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (dialog) => AlertDialog(
+            title: Text('确认更换 ${books.length} 本书的封面'),
+            content: SizedBox(
+              width: 420,
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: books.length,
+                itemBuilder: (_, index) => ListTile(
+                  title: Text('${index + 1}. ${books[index].title}'),
+                  subtitle: Text(images[ordered ? index : 0].name),
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialog, false),
+                child: const Text('取消'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(dialog, true),
+                child: const Text('更换封面'),
+              ),
+            ],
+          ),
+        );
+        if (!mounted || confirmed != true) return;
       }
+      setState(() => _stoppable = true);
+      _progress(0, books.length);
       for (final (index, book) in books.indexed) {
         if (_stop) break;
         try {
           final updated = restore
               ? await widget.books.restoreCover(book.id)
-              : await widget.books.setCover(book.id, path!);
+              : await widget.books.setCover(
+                  book.id,
+                  images[mode == _CoverMode.ordered ? index : 0].path!,
+                );
           await widget.library.setShelfMembership(
             updated.id,
             widget.library.contains(updated.id),
@@ -281,8 +389,15 @@ class _LocalBookBatchPageState extends State<LocalBookBatchPage> {
         }
         _progress(index + 1, books.length);
       }
+      if (_done < _total) _results.add('已停止，剩余 ${_total - _done} 本未处理');
     } finally {
-      if (image != null) await documents.releaseBooks([image]);
+      if (images.isNotEmpty) {
+        try {
+          await documents.releaseBooks(images);
+        } catch (_) {
+          _results.add('选图临时文件清理失败');
+        }
+      }
     }
   });
 
@@ -308,8 +423,16 @@ class _LocalBookBatchPageState extends State<LocalBookBatchPage> {
         LocalImportReview(
           books: widget.books,
           library: widget.library,
+          mergeOnly: true,
           report: LocalImportReport(
-            bookIds: _targets.map((b) => b.id).toList(),
+            bookIds:
+                (_targets.isEmpty
+                        ? widget.books.books.where(
+                            (book) => widget.library.localBookVisible(book.id),
+                          )
+                        : _targets)
+                    .map((b) => b.id)
+                    .toList(),
           ),
         ),
         reduceMotion: widget.library.reduceMotion,
@@ -348,6 +471,33 @@ class _LocalBookBatchPageState extends State<LocalBookBatchPage> {
     }
   }
 
+  Widget _actions(bool active) => Wrap(
+    spacing: 8,
+    runSpacing: 8,
+    children: switch (_task) {
+      _BatchTask.volumes => [
+        _action('合并与分卷顺序', active ? () => _merge() : null),
+        _action('推荐合并', _busy ? null : () => _merge(suggestions: true)),
+      ],
+      _BatchTask.archive => [
+        if (_archived) _action('恢复到书架', active ? _restore : null),
+        _action(
+          _archived ? '删除本机文件' : '移除书籍',
+          active ? () => _remove(archived: _archived) : null,
+        ),
+        _action('修复与整理', active ? _maintenance : null),
+      ],
+      _BatchTask.category => [_action('移动分类', active ? _category : null)],
+      _BatchTask.cover => [
+        _action('更换封面', active ? () => _covers() : null),
+        _action('恢复原封面', active ? () => _covers(restore: true) : null),
+      ],
+    },
+  );
+
+  Widget _action(String label, VoidCallback? onPressed) =>
+      GlassTextButton(onPressed: onPressed, child: AppText(label));
+
   @override
   Widget build(BuildContext context) => PopScope<void>(
     canPop: !_busy,
@@ -360,10 +510,7 @@ class _LocalBookBatchPageState extends State<LocalBookBatchPage> {
               label: '返回',
               onPressed: _busy ? null : () => Navigator.pop(context),
             ),
-            title: const ArchiveRouteTitle(
-              title: '批量整理本地书',
-              code: 'LOCAL / BATCH',
-            ),
+            title: const ArchiveRouteTitle(title: '批量整理', code: ''),
           ),
           body: ListenableBuilder(
             listenable: Listenable.merge([
@@ -373,160 +520,199 @@ class _LocalBookBatchPageState extends State<LocalBookBatchPage> {
             ]),
             builder: (context, _) {
               final visible = _visible;
-              final active = !_busy && _targets.isNotEmpty;
-              return SafeArea(
-                top: false,
-                child: Padding(
-                  padding: EdgeInsets.fromLTRB(
-                    16,
-                    MediaQuery.paddingOf(context).top +
-                        FrostedHeader.toolbarHeight +
-                        12,
-                    16,
-                    8,
-                  ),
-                  child: Column(
-                    children: [
-                      AppSearchField(
-                        controller: _search,
-                        hint: '搜索书名、作者',
-                        onChanged: (_) => setState(() {}),
-                      ),
-                      Wrap(
-                        spacing: 8,
-                        crossAxisAlignment: WrapCrossAlignment.center,
+              final positions = {
+                for (final (index, book) in _targets.indexed)
+                  book.id: index + 1,
+              };
+              final active = !_busy && positions.isNotEmpty;
+              return CustomScrollView(
+                keyboardDismissBehavior:
+                    ScrollViewKeyboardDismissBehavior.onDrag,
+                slivers: [
+                  SliverPadding(
+                    padding: EdgeInsets.fromLTRB(
+                      16,
+                      MediaQuery.paddingOf(context).top +
+                          FrostedHeader.toolbarHeight +
+                          12,
+                      16,
+                      0,
+                    ),
+                    sliver: SliverToBoxAdapter(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          FilterChip(
-                            label: const Text('已移出书架'),
-                            selected: _hidden,
-                            onSelected: _busy
-                                ? null
-                                : (value) => setState(() => _hidden = value),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 4,
+                            children: [
+                              for (final (task, icon, label) in const [
+                                (
+                                  _BatchTask.volumes,
+                                  ArchiveSymbol.layers,
+                                  '合并分卷',
+                                ),
+                                (
+                                  _BatchTask.archive,
+                                  ArchiveSymbol.folder,
+                                  '归档处理',
+                                ),
+                                (
+                                  _BatchTask.category,
+                                  ArchiveSymbol.grid,
+                                  '批量分类',
+                                ),
+                                (_BatchTask.cover, ArchiveSymbol.image, '批量封面'),
+                              ])
+                                ChoiceChip(
+                                  avatar: ArchiveIcon.symbol(icon, size: 18),
+                                  label: Text(label),
+                                  showCheckmark: false,
+                                  selected: _task == task,
+                                  onSelected: _busy
+                                      ? null
+                                      : (_) => setState(() {
+                                          _task = task;
+                                          _results.clear();
+                                        }),
+                                ),
+                            ],
                           ),
-                          TextButton(
-                            onPressed: _busy
-                                ? null
-                                : () => setState(
-                                    () => _selected.addAll(
-                                      visible.map((b) => b.id),
-                                    ),
+                          if (_task == _BatchTask.archive)
+                            Wrap(
+                              spacing: 8,
+                              children: [
+                                for (final (hidden, label) in const [
+                                  (false, '书架上'),
+                                  (true, '已移出书架'),
+                                ])
+                                  ChoiceChip(
+                                    label: Text(label),
+                                    selected: _hidden == hidden,
+                                    onSelected: _busy
+                                        ? null
+                                        : (_) => setState(() {
+                                            _hidden = hidden;
+                                            _results.clear();
+                                          }),
                                   ),
-                            child: const Text('全选结果'),
+                              ],
+                            ),
+                          const SizedBox(height: 8),
+                          AppSearchField(
+                            controller: _search,
+                            hint: '搜索书名、作者',
+                            onChanged: (_) => setState(() {}),
                           ),
-                          TextButton(
-                            onPressed: _busy
-                                ? null
-                                : () => setState(
-                                    () => _selected.removeAll(
-                                      visible.map((b) => b.id),
-                                    ),
+                          Wrap(
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            children: [
+                              TextButton(
+                                onPressed: _busy || visible.isEmpty
+                                    ? null
+                                    : () => setState(
+                                        () => _selected.addAll(
+                                          visible.map((book) => book.id),
+                                        ),
+                                      ),
+                                child: const Text('全选结果'),
+                              ),
+                              TextButton(
+                                onPressed: _busy || visible.isEmpty
+                                    ? null
+                                    : () => setState(
+                                        () => _selected.removeAll(
+                                          visible.map((book) => book.id),
+                                        ),
+                                      ),
+                                child: const Text('取消选择结果'),
+                              ),
+                              Text('已选 ${positions.length} 本'),
+                            ],
+                          ),
+                          _actions(active),
+                          if (_task == _BatchTask.volumes && positions.isEmpty)
+                            const Padding(
+                              padding: EdgeInsets.only(top: 8),
+                              child: Text('未选书籍时，推荐合并会检查书架上的全部书籍。'),
+                            ),
+                          if (_task == _BatchTask.cover)
+                            const Padding(
+                              padding: EdgeInsets.only(top: 8),
+                              child: Text('勾选顺序即配图顺序。也可为所选书籍共用同一张图片。'),
+                            ),
+                          if (_busy) ...[
+                            const SizedBox(height: 12),
+                            if (_total > 0)
+                              LinearProgressIndicator(value: _done / _total),
+                            Wrap(
+                              crossAxisAlignment: WrapCrossAlignment.center,
+                              children: [
+                                Text(
+                                  _total == 0 ? '处理中' : '处理中 $_done / $_total',
+                                ),
+                                if (_stoppable)
+                                  TextButton(
+                                    onPressed: _stop
+                                        ? null
+                                        : () => setState(() => _stop = true),
+                                    child: Text(_stop ? '等待当前操作完成' : '停止'),
                                   ),
-                            child: const Text('取消选择结果'),
-                          ),
-                          Text('已选 ${_targets.length} 本'),
+                              ],
+                            ),
+                          ],
+                          if (_results.isNotEmpty)
+                            ConstrainedBox(
+                              constraints: const BoxConstraints(maxHeight: 128),
+                              child: ListView.builder(
+                                padding: const EdgeInsets.only(top: 8),
+                                primary: false,
+                                shrinkWrap: true,
+                                itemCount: _results.length,
+                                itemBuilder: (_, index) =>
+                                    AppText(_results[index]),
+                              ),
+                            ),
+                          const Divider(height: 24),
+                          if (visible.isEmpty) const Text('当前范围没有书籍'),
                         ],
                       ),
-                      if (_busy) ...[
-                        LinearProgressIndicator(
-                          value: _total == 0 ? null : _done / _total,
-                        ),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text('处理中 $_done / $_total'),
-                            if (_stoppable)
-                              TextButton(
-                                onPressed: _stop
-                                    ? null
-                                    : () => setState(() => _stop = true),
-                                child: Text(_stop ? '等待当前操作完成' : '停止'),
-                              ),
-                          ],
-                        ),
-                      ],
-                      Expanded(
-                        child: visible.isEmpty
-                            ? const Center(child: Text('当前范围没有书籍'))
-                            : ListView.builder(
-                                itemCount: visible.length,
-                                itemBuilder: (context, index) {
-                                  final book = visible[index];
-                                  return CheckboxListTile(
-                                    value: _selected.contains(book.id),
-                                    title: Text(book.title),
-                                    subtitle: Text(book.author),
-                                    onChanged: _busy
-                                        ? null
-                                        : (value) => setState(() {
-                                            value == true
-                                                ? _selected.add(book.id)
-                                                : _selected.remove(book.id);
-                                          }),
-                                  );
-                                },
-                              ),
-                      ),
-                      if (_results.isNotEmpty)
-                        ConstrainedBox(
-                          constraints: const BoxConstraints(maxHeight: 130),
-                          child: ListView(
-                            shrinkWrap: true,
-                            children: [
-                              for (final message in _results) AppText(message),
-                            ],
-                          ),
-                        ),
-                      SizedBox(
-                        height: 96,
-                        child: SingleChildScrollView(
-                          child: Wrap(
-                            alignment: WrapAlignment.center,
-                            spacing: 8,
-                            children: [
-                              GlassTextButton(
-                                onPressed: active ? _category : null,
-                                child: const AppText('移动分类'),
-                              ),
-                              GlassTextButton(
-                                onPressed: active ? _remove : null,
-                                child: const AppText('移除'),
-                              ),
-                              if (_hidden)
-                                GlassTextButton(
-                                  onPressed: active ? _restore : null,
-                                  child: const AppText('恢复到书架'),
-                                ),
-                              GlassTextButton(
-                                onPressed: active ? _maintenance : null,
-                                child: const AppText('修复与整理'),
-                              ),
-                              GlassTextButton(
-                                onPressed: active ? () => _covers() : null,
-                                child: const AppText('更换封面'),
-                              ),
-                              GlassTextButton(
-                                onPressed: active
-                                    ? () => _covers(restore: true)
-                                    : null,
-                                child: const AppText('恢复原封面'),
-                              ),
-                              GlassTextButton(
-                                onPressed: active ? () => _merge() : null,
-                                child: const AppText('合并与分卷顺序'),
-                              ),
-                              GlassTextButton(
-                                onPressed: active
-                                    ? () => _merge(suggestions: true)
-                                    : null,
-                                child: const AppText('同系列分卷建议'),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ],
+                    ),
                   ),
-                ),
+                  SliverPadding(
+                    padding: EdgeInsets.fromLTRB(
+                      8,
+                      0,
+                      8,
+                      MediaQuery.paddingOf(context).bottom + 16,
+                    ),
+                    sliver: SliverList.builder(
+                      itemCount: visible.length,
+                      itemBuilder: (context, index) {
+                        final book = visible[index];
+                        final position = positions[book.id];
+                        return CheckboxListTile(
+                          value: position != null,
+                          title: Text(book.title),
+                          subtitle: Text(
+                            _task == _BatchTask.cover && position != null
+                                ? '队列第 $position 本 · ${book.author}'
+                                : book.author,
+                          ),
+                          onChanged: _busy
+                              ? null
+                              : (value) => setState(() {
+                                  if (value == true) {
+                                    _selected.add(book.id);
+                                  } else {
+                                    _selected.remove(book.id);
+                                  }
+                                }),
+                        );
+                      },
+                    ),
+                  ),
+                ],
               );
             },
           ),

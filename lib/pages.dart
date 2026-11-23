@@ -74,6 +74,7 @@ import 'native_effects.dart' show NativeGlassGroup;
 import 'lan_handoff_widgets.dart';
 import 'network_status.dart';
 import 'novel_feed_controller.dart';
+import 'offline_cache.dart' show formatCacheBytes;
 import 'offline_repository.dart';
 import 'offline_widgets.dart';
 import 'low_performance_page.dart';
@@ -2602,6 +2603,224 @@ Future<void> openLocalLibrary(
   reduceMotion: state.reduceMotion,
 );
 
+class _StorageOverview extends StatefulWidget {
+  const _StorageOverview({required this.reduceMotion});
+
+  final bool reduceMotion;
+
+  @override
+  State<_StorageOverview> createState() => _StorageOverviewState();
+}
+
+class _StorageOverviewState extends State<_StorageOverview> {
+  final _illustrations = ReaderIllustrationCache.shared;
+  late var _usage = LocalPlatform.storageUsage();
+  bool _confirming = false;
+
+  Future<void> _clearIllustrations() async {
+    setState(() => _confirming = true);
+    try {
+      final confirmed = await confirmNovelAction(
+        context,
+        title: '清理插图内存缓存？',
+        message: '释放插图预览使用的内存。原书、已保存的插图和阅读记录都会保留。',
+        confirmLabel: '清理插图',
+        reduceMotion: widget.reduceMotion,
+      );
+      if (!mounted || !confirmed) return;
+      final bytes = _illustrations.encodedBytes;
+      _illustrations.clearMemory();
+      showNovelFeedback(
+        context,
+        bytes > 0 ? '已清理 ${formatCacheBytes(bytes)} 插图缓存' : '插图缓存已清理',
+      );
+    } finally {
+      if (mounted) setState(() => _confirming = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return FutureBuilder<Map<String, int>>(
+      future: _usage,
+      builder: (context, snapshot) {
+        final loading = snapshot.connectionState != ConnectionState.done;
+        final stats = snapshot.data ?? const <String, int>{};
+        final appParts = [
+          ('应用程序', stats['appCode'], colors.primary),
+          ('应用数据', stats['appData'], colors.secondary),
+          ('磁盘缓存', stats['appCache'], colors.tertiary),
+        ];
+        final appKnown = appParts.every((entry) => entry.$2 != null);
+        final appTotal = appParts.fold(
+          0,
+          (sum, entry) => sum + (entry.$2 ?? 0),
+        );
+        final phoneTotal = stats['phoneTotal'] ?? 0;
+        final phoneAvailable = stats['phoneAvailable'];
+        final phoneUsed = phoneAvailable == null || phoneTotal <= 0
+            ? null
+            : (phoneTotal - phoneAvailable).clamp(0, phoneTotal);
+        final imageBytes = _illustrations.encodedBytes;
+        final imageLimit = _illustrations.maxBytes;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            ContentPanel(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _heading(
+                    ArchiveSymbol.folder,
+                    'App 存储',
+                    appKnown ? '占用 ${formatCacheBytes(appTotal)}' : null,
+                  ),
+                  const SizedBox(height: 12),
+                  if (appKnown) ...[
+                    Semantics(
+                      label: 'App 存储构成',
+                      value: formatCacheBytes(appTotal),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(6),
+                        child: SizedBox(
+                          height: 8,
+                          child: Row(
+                            children: [
+                              for (final (_, value, color) in appParts)
+                                if (value! > 0)
+                                  Expanded(
+                                    flex: value,
+                                    child: ColoredBox(color: color),
+                                  ),
+                              if (appTotal == 0)
+                                Expanded(
+                                  child: ColoredBox(
+                                    color: colors.surfaceContainerHighest,
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    for (final (label, value, color) in appParts)
+                      _legend(label, value!, color),
+                  ] else
+                    _storageStatus(loading, '暂时无法读取 App 存储统计'),
+                  const Divider(height: 28),
+                  _heading(
+                    ArchiveSymbol.image,
+                    '插图内存缓存',
+                    '${formatCacheBytes(imageBytes)} / ${formatCacheBytes(imageLimit)}',
+                  ),
+                  const SizedBox(height: 8),
+                  LinearProgressIndicator(
+                    value: imageLimit == 0
+                        ? 0
+                        : (imageBytes / imageLimit).clamp(0.0, 1.0),
+                    minHeight: 8,
+                    borderRadius: BorderRadius.circular(6),
+                    semanticsLabel: '插图内存缓存用量',
+                  ),
+                  const SizedBox(height: 8),
+                  const AppText('显示图片原始字节的缓存用量。清理后可重新加载。'),
+                  Align(
+                    alignment: AlignmentDirectional.centerStart,
+                    child: TextButton(
+                      onPressed: _confirming ? null : _clearIllustrations,
+                      child: const Text('清理插图内存缓存'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+            ContentPanel(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _heading(
+                    ArchiveSymbol.phone,
+                    '手机内部存储',
+                    phoneUsed == null
+                        ? null
+                        : '总容量 ${formatCacheBytes(phoneTotal)}',
+                  ),
+                  const SizedBox(height: 12),
+                  if (phoneUsed != null) ...[
+                    LinearProgressIndicator(
+                      value: phoneUsed / phoneTotal,
+                      minHeight: 8,
+                      borderRadius: BorderRadius.circular(6),
+                      semanticsLabel: '手机内部存储已用',
+                    ),
+                    const SizedBox(height: 10),
+                    _legend('已用', phoneUsed, colors.primary),
+                    _legend(
+                      '可用',
+                      phoneTotal - phoneUsed,
+                      colors.surfaceContainerHighest,
+                    ),
+                  ] else
+                    _storageStatus(loading, '暂时无法读取手机存储统计'),
+                ],
+              ),
+            ),
+            Align(
+              alignment: AlignmentDirectional.centerEnd,
+              child: TextButton(
+                onPressed: loading
+                    ? null
+                    : () =>
+                          setState(() => _usage = LocalPlatform.storageUsage()),
+                child: const Text('刷新存储统计'),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _storageStatus(bool loading, String unavailable) => loading
+      ? const LinearProgressIndicator(semanticsLabel: '正在读取存储统计')
+      : AppText(unavailable);
+
+  Widget _heading(ArchiveSymbol icon, String title, String? amount) => Row(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      ArchiveIcon.symbol(icon, size: 22),
+      const SizedBox(width: 10),
+      Expanded(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            AppText(title, style: const TextStyle(fontWeight: FontWeight.w700)),
+            if (amount != null) AppText(amount),
+          ],
+        ),
+      ),
+    ],
+  );
+
+  Widget _legend(String label, int bytes, Color color) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 3),
+    child: Row(
+      children: [
+        DecoratedBox(
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+          child: const SizedBox.square(dimension: 8),
+        ),
+        const SizedBox(width: 8),
+        Expanded(child: AppText(label)),
+        Flexible(child: AppText(formatCacheBytes(bytes))),
+      ],
+    ),
+  );
+}
+
 class SettingsPage extends StatelessWidget {
   const SettingsPage({
     super.key,
@@ -2695,7 +2914,7 @@ class SettingsPage extends StatelessWidget {
             context,
             id: 'data',
             title: '数据与存储',
-            subtitle: '阅读历史、缓存管理与备份恢复',
+            subtitle: '阅读历史、存储空间与备份恢复',
             code: 'SYSTEM / STORAGE',
             icon: CupertinoIcons.folder,
             options: _dataOptions,
@@ -3197,34 +3416,10 @@ class SettingsPage extends StatelessWidget {
       ),
       const SizedBox(height: 24),
     ],
-    if (repository case final OfflineNovelRepository offline) ...[
-      sectionHeader(context, '离线阅读', ''),
+    if (LocalPlatform.android) ...[
+      sectionHeader(context, '存储空间', ''),
       const SizedBox(height: 14),
-      ContentPanel(
-        onTap: () => pushNovelPage<void>(
-          context,
-          OfflineCachePage(
-            repository: offline,
-            reduceMotion: state.reduceMotion,
-            onOpen: (pageContext, novel) =>
-                openDetail(pageContext, novel, state, offline, fromCache: true),
-          ),
-          reduceMotion: state.reduceMotion,
-        ),
-        child: const Row(
-          children: [
-            ArchiveIcon(CupertinoIcons.cloud_download, size: 21),
-            SizedBox(width: 12),
-            Expanded(
-              child: AppText(
-                '缓存管理',
-                style: TextStyle(fontWeight: FontWeight.w600),
-              ),
-            ),
-            ArchiveIcon(CupertinoIcons.chevron_right, size: 14),
-          ],
-        ),
-      ),
+      _StorageOverview(reduceMotion: state.reduceMotion),
       const SizedBox(height: 24),
     ],
     sectionHeader(context, '备份与清理', ''),
@@ -3262,29 +3457,6 @@ class SettingsPage extends StatelessWidget {
           LegacyImportPage(state: state),
           reduceMotion: state.reduceMotion,
         ),
-      ),
-      const SizedBox(height: 14),
-      FeatureEntry(
-        title: '清理插图内存缓存',
-        icon: CupertinoIcons.photo,
-        subtitle: '释放预览内存，保留原书、已存插图和阅读记录',
-        onTap: () async {
-          if (!await confirmNovelAction(
-            context,
-            title: '清理插图内存缓存？',
-            message: '再次查看时从本地原书或已有缓存载入，不删除任何书籍文件。',
-            confirmLabel: '清理插图',
-            reduceMotion: state.reduceMotion,
-          )) {
-            return;
-          }
-          try {
-            ReaderIllustrationCache.shared.clearMemory();
-            if (context.mounted) showNovelFeedback(context, '插图缓存已清理');
-          } catch (_) {
-            if (context.mounted) showNovelFeedback(context, '缓存清理失败，请重试');
-          }
-        },
       ),
     ],
   ];
@@ -4008,34 +4180,13 @@ class _DetailPageState extends State<DetailPage> with TickerProviderStateMixin {
   int? _resumeDirectory;
   int? _returnDirectory;
   final Set<String> _expandedVolumes = {};
-  final Set<String> _directoryVolumeKeys = {};
   int? _directoryBook;
 
   List<({NovelVolume? volume, int? chapter})> _directory() {
-    // Provisional cached chapters can predate volume metadata. Wait for the
-    // displayed directory before choosing its initially expanded volume.
     if (isLoading || loadError != null) return const [];
     final volumes = NovelVolume.of(novel.directoryChapters);
-    if (_directoryBook != novel.id) {
-      _expandedVolumes.clear();
-      _directoryVolumeKeys.clear();
-    }
-    final current = novel.directoryIndexFor(
-      _resumeChapter ?? 0,
-      paragraph: state.positionFor(novel.id)?.paragraphIndex ?? 0,
-      offset: state.positionFor(novel.id)?.textOffset ?? 0,
-    );
-    for (final volume in volumes) {
-      if (current >= volume.start &&
-          current < volume.end &&
-          !_directoryVolumeKeys.contains(volume.key)) {
-        _expandedVolumes.add(volume.key);
-      }
-    }
-    _directoryVolumeKeys
-      ..clear()
-      ..addAll(volumes.map((volume) => volume.key));
-    _expandedVolumes.retainAll(_directoryVolumeKeys);
+    if (_directoryBook != novel.id) _expandedVolumes.clear();
+    _expandedVolumes.retainAll(volumes.map((volume) => volume.key));
     if (volumes.isNotEmpty) _directoryBook = novel.id;
     return [
       for (final volume in _catalogueReversed ? volumes.reversed : volumes) ...[
@@ -4069,10 +4220,25 @@ class _DetailPageState extends State<DetailPage> with TickerProviderStateMixin {
   bool get _reduceMotion =>
       state.reduceMotion || MediaQuery.disableAnimationsOf(context);
 
+  LocalBookStore? get _localStore => repository is OfflineNovelRepository
+      ? (repository as OfflineNovelRepository).local
+      : null;
+  Novel? _metadataBook;
+
+  /// Backfilled package metadata arrives after the first detail build.
+  void _localBooksChanged() {
+    final next = _localStore?.book(widget.novel.id);
+    if (identical(next, _metadataBook)) return;
+    _metadataBook = next;
+    if (mounted) setState(() {});
+  }
+
   @override
   void initState() {
     super.initState();
     state.readerSettingsChanges.addListener(_catalogueSettingsChanged);
+    _metadataBook = _localStore?.book(widget.novel.id);
+    _localStore?.addListener(_localBooksChanged);
     _catalogueOrder.addStatusListener((status) {
       if (status == AnimationStatus.completed &&
           _directoryReflow.active &&
@@ -4206,6 +4372,17 @@ class _DetailPageState extends State<DetailPage> with TickerProviderStateMixin {
   void didUpdateWidget(DetailPage oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.novel.id != widget.novel.id) _summaryExpanded = false;
+    if (oldWidget.repository != repository) {
+      final previous = oldWidget.repository;
+      if (previous is OfflineNovelRepository) {
+        previous.local?.removeListener(_localBooksChanged);
+      }
+      _localStore?.addListener(_localBooksChanged);
+    }
+    if (oldWidget.novel.id != widget.novel.id ||
+        oldWidget.repository != repository) {
+      _metadataBook = _localStore?.book(widget.novel.id);
+    }
     if (oldWidget.state != widget.state) {
       oldWidget.state.readerSettingsChanges.removeListener(
         _catalogueSettingsChanged,
@@ -4228,6 +4405,7 @@ class _DetailPageState extends State<DetailPage> with TickerProviderStateMixin {
 
   @override
   void dispose() {
+    _localStore?.removeListener(_localBooksChanged);
     state.readerSettingsChanges.removeListener(_catalogueSettingsChanged);
     _routeAnimation?.removeListener(_routeChanged);
     _intro.dispose();
@@ -4503,6 +4681,18 @@ class _DetailPageState extends State<DetailPage> with TickerProviderStateMixin {
           ),
         ),
       ),
+      if (novel.subtitle.trim().isNotEmpty) ...[
+        const SizedBox(height: 4),
+        AppText(
+          novel.subtitle,
+          key: const ValueKey('detail-subtitle'),
+          style: TextStyle(
+            fontSize: 16,
+            height: 1.4,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
+        ),
+      ],
       const SizedBox(height: 8),
       RevealFromTop(
         key: const ValueKey('detail-author-reveal'),
@@ -4567,6 +4757,18 @@ class _DetailPageState extends State<DetailPage> with TickerProviderStateMixin {
                 ),
               ),
       ),
+      if (novel.illustrator.trim().isNotEmpty) ...[
+        const SizedBox(height: 4),
+        AppText(
+          '插画 · ${novel.illustrator}',
+          key: const ValueKey('detail-illustrator'),
+          style: TextStyle(
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+            fontSize: 13,
+            height: 1.5,
+          ),
+        ),
+      ],
       if (isLocalBook(novel.id)) ...[
         const SizedBox(height: 8),
         AppText(
@@ -4578,6 +4780,22 @@ class _DetailPageState extends State<DetailPage> with TickerProviderStateMixin {
             height: 1.55,
           ),
         ),
+        if (novel.publisher.trim().isNotEmpty ||
+            novel.publishedDate.trim().isNotEmpty) ...[
+          const SizedBox(height: 8),
+          AppText(
+            [
+              if (novel.publisher.trim().isNotEmpty) novel.publisher,
+              if (novel.publishedDate.trim().isNotEmpty) novel.publishedDate,
+            ].join(' · '),
+            key: const ValueKey('detail-publication'),
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+              fontSize: 13,
+              height: 1.55,
+            ),
+          ),
+        ],
       ],
       const SizedBox(height: 13),
       RevealFromTop(
@@ -5721,6 +5939,17 @@ class _ReaderPageState extends State<ReaderPage>
   }
 
   Novel get _sourceBook => _readerBook;
+
+  int? _footerVolume(Novel book, int index, ReaderPreferences prefs) {
+    if (!prefs.showFooterVolume || !book.genre.split(' ').contains('本地合订本')) {
+      return null;
+    }
+    final volumes = NovelVolume.of(book.chapters);
+    final volume = volumes.indexWhere(
+      (volume) => index >= volume.start && index < volume.end,
+    );
+    return volume < 0 ? null : volume + 1;
+  }
 
   int? _readerChapterFor(Novel source, int chapter) {
     if (source.id != _sourceBook.id ||
@@ -7423,9 +7652,10 @@ class _ReaderPageState extends State<ReaderPage>
       chapter: chapter,
       text: paragraphs[index],
       selectableOffset:
-          _readerPreferences.indent && format?.allowsIndent != false
-          ? readerIndentLength
-          : 0,
+          (_readerPreferences.indent && format?.allowsIndent != false
+              ? readerIndentLength
+              : 0) +
+          (format?.marker.length ?? 0),
       anchorForOffset: (offset) =>
           (paragraph: index, offset: offset.clamp(0, paragraphs[index].length)),
       child: ReaderHighlightText(
@@ -8194,7 +8424,11 @@ class _ReaderPageState extends State<ReaderPage>
           controller: _selection,
           chapter: chapter,
           text: fragment.text,
-          selectableOffset: fragment.indent ? readerIndentLength : 0,
+          selectableOffset:
+              (fragment.indent ? readerIndentLength : 0) +
+              (fragment.start == 0
+                  ? (content.formats[fragment.paragraph]?.marker.length ?? 0)
+                  : 0),
           anchorForOffset: (offset) => (
             paragraph: fragment.paragraph,
             offset: fragment.start + offset.clamp(0, fragment.text.length),
@@ -9997,6 +10231,9 @@ class _ReaderPageState extends State<ReaderPage>
       final safe = MediaQuery.viewPaddingOf(context);
       final dark = Theme.of(context).brightness == Brightness.dark;
       final generation = _contentGeneration, chapterIndex = _chapter;
+      final volume = footer
+          ? _footerVolume(_sourceBook, chapterIndex, preferences)
+          : null;
       final statusInsets = !footer && preferences.hideSystemStatus
           ? ReaderStatusFooter.horizontalInsetsFor(
               context,
@@ -10047,6 +10284,9 @@ class _ReaderPageState extends State<ReaderPage>
                     title: readerInformationTitle(
                       chapter.title,
                       _sourceBook.directoryIndexFor(_chapter) + 1,
+                      showChapterNumber:
+                          !footer || preferences.showFooterChapterNumber,
+                      volume: volume,
                     ),
                     bookTitle: null,
                     footer: footer,
@@ -10091,6 +10331,10 @@ class _ReaderPageState extends State<ReaderPage>
                                     offset: textOffset,
                                   ) +
                                   1,
+                              showChapterNumber:
+                                  !footer ||
+                                  preferences.showFooterChapterNumber,
+                              volume: volume,
                             );
                           }
                         : null,
@@ -10668,12 +10912,20 @@ class _ReaderPageState extends State<ReaderPage>
           builder: (context, snapshot) {
             final prefs = _readerPreferences;
             final chapterIndex = _chapter, sourceBook = _sourceBook;
-            String pageTitle(int index, ReaderTextAnchor anchor) =>
+            String Function(ReaderTextAnchor) pageTitle(int index) {
+              final volume = _footerVolume(sourceBook, index, prefs);
+              return (anchor) => readerInformationTitle(
                 sourceBook.readingTitleFor(
                   index,
                   paragraph: anchor.paragraph,
                   offset: anchor.offset,
-                );
+                ),
+                index + 1,
+                showChapterNumber: prefs.showFooterChapterNumber,
+                volume: volume,
+              );
+            }
+
             _layoutKey =
                 _currentContent?.layoutKey(prefs.layoutKey) ?? prefs.layoutKey;
             _layoutTextScale =
@@ -10755,8 +11007,7 @@ class _ReaderPageState extends State<ReaderPage>
                   sourceBook.readingTitleFor(index),
                   index + 1,
                 ),
-                titleForAnchor: (anchor) =>
-                    readerInformationTitle(pageTitle(index, anchor), index + 1),
+                titleForAnchor: pageTitle(index),
                 pageBuilder: (page) => _pagedLeaf(
                   page,
                   paragraphStyle,
@@ -10812,11 +11063,7 @@ class _ReaderPageState extends State<ReaderPage>
                               title: chapter.title,
                               bookTitle: _sourceBook.title,
                               chrome: _chrome,
-                              titleForAnchor: (anchor) =>
-                                  readerInformationTitle(
-                                    pageTitle(chapterIndex, anchor),
-                                    chapterIndex + 1,
-                                  ),
+                              titleForAnchor: pageTitle(chapterIndex),
                               position: _restorePending,
                               preservePositionStart: _restoreAlignStart,
                               padding: pagedPadding,

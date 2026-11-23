@@ -310,7 +310,8 @@ class ReaderHighlightText extends StatelessWidget {
             DefaultTextStyle.of(context).style.merge(style),
           ),
           scaler: MediaQuery.textScalerOf(context),
-          prefix: indent ? readerIndentLength : 0,
+          prefix:
+              (indent ? readerIndentLength : 0) + (format?.marker.length ?? 0),
           onNote: onNote ?? (_) {},
           child: text,
         );
@@ -318,11 +319,13 @@ class ReaderHighlightText extends StatelessWidget {
   Widget _paragraph(BuildContext context, List<InlineSpan> children) {
     final effectiveStyle = format?.textStyle(style) ?? style;
     final alignment = format?.textAlign(textAlign) ?? textAlign;
+    final marker = format?.marker ?? '';
     Widget text({double? continuationWidth}) => Text.rich(
       readerParagraphSpan(
         children: children,
         style: effectiveStyle,
         indent: indent,
+        marker: marker,
         continuationWidth: continuationWidth,
       ),
       key: ValueKey('paragraph-$index'),
@@ -446,7 +449,9 @@ class ReaderHighlightText extends StatelessWidget {
               foreground:
                   style.color ?? Theme.of(context).colorScheme.onSurface,
               dark: Theme.of(context).brightness == Brightness.dark,
-              prefix: indent ? readerIndentLength : 0,
+              prefix:
+                  (indent ? readerIndentLength : 0) +
+                  (format?.marker.length ?? 0),
               child: paragraph,
             );
       final openNote = onAnnotationNoteTap;
@@ -455,7 +460,8 @@ class ReaderHighlightText extends StatelessWidget {
         marks: notes,
         foreground: style.color ?? Theme.of(context).colorScheme.onSurface,
         dark: Theme.of(context).brightness == Brightness.dark,
-        prefix: indent ? readerIndentLength : 0,
+        prefix:
+            (indent ? readerIndentLength : 0) + (format?.marker.length ?? 0),
         scaler: MediaQuery.textScalerOf(context),
         onTap: openNote,
         child: rendered,

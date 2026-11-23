@@ -18,6 +18,10 @@ class Novel {
     this.lastUpdate,
     this.chapterCount = 0,
     this.navigation,
+    this.subtitle = '',
+    this.illustrator = '',
+    this.publisher = '',
+    this.publishedDate = '',
   });
 
   final int id;
@@ -25,6 +29,10 @@ class Novel {
   final String author;
   final String genre;
   final String summary;
+  final String subtitle;
+  final String illustrator;
+  final String publisher;
+  final String publishedDate;
   final List<Color> colors;
   final List<NovelChapter> chapters;
   final bool isComplete;
@@ -170,6 +178,10 @@ class Novel {
     lastUpdate: lastUpdate,
     chapterCount: items.length,
     navigation: navigation,
+    subtitle: subtitle,
+    illustrator: illustrator,
+    publisher: publisher,
+    publishedDate: publishedDate,
   );
 
   Map<String, Object?> toSnapshot() => {
@@ -184,6 +196,10 @@ class Novel {
     'lastUpdate': lastUpdate,
     'chapterCount': chapters.isNotEmpty ? chapters.length : chapterCount,
     if (navigation != null) 'navigation': navigation!.toJson(),
+    if (subtitle.isNotEmpty) 'subtitle': subtitle,
+    if (illustrator.isNotEmpty) 'illustrator': illustrator,
+    if (publisher.isNotEmpty) 'publisher': publisher,
+    if (publishedDate.isNotEmpty) 'publishedDate': publishedDate,
   };
 
   factory Novel.fromSnapshot(Map<String, dynamic> value) {
@@ -212,6 +228,16 @@ class Novel {
       navigation: value['navigation'] == null
           ? null
           : BookNavigation.fromJson(value['navigation']),
+      subtitle: value['subtitle'] is String ? value['subtitle'] as String : '',
+      illustrator: value['illustrator'] is String
+          ? value['illustrator'] as String
+          : '',
+      publisher: value['publisher'] is String
+          ? value['publisher'] as String
+          : '',
+      publishedDate: value['publishedDate'] is String
+          ? value['publishedDate'] as String
+          : '',
     );
   }
 }

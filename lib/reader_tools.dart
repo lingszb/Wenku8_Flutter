@@ -1877,6 +1877,32 @@ class _ReaderToolsState extends State<ReaderTools>
           ),
         ),
       if (category == 'screen')
+        _adjustment(
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _switch(
+                context,
+                '显示合订卷号',
+                prefs.showFooterVolume,
+                (v) => _preferences(prefs.copyWith(showFooterVolume: v)),
+              ),
+              _switch(
+                context,
+                '显示自动话号',
+                prefs.showFooterChapterNumber,
+                (v) => _preferences(prefs.copyWith(showFooterChapterNumber: v)),
+              ),
+              _switch(
+                context,
+                '显示右侧页码',
+                prefs.showFooterPageCount,
+                (v) => _preferences(prefs.copyWith(showFooterPageCount: v)),
+              ),
+            ],
+          ),
+        ),
+      if (category == 'screen')
         AnimatedOptionSection(
           expanded: prefs.hideSystemStatus,
           child: Column(

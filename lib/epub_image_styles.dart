@@ -19,8 +19,9 @@ Map<Element, LocalImageLayout> epubImageStyles(
 
 Map<Element, Map<String, String>> epubStyleProperties(
   Document document,
-  String? Function(String) readStylesheet,
-) {
+  String? Function(String) readStylesheet, {
+  bool conditionalRules = true,
+}) {
   const supportedProperties = {
     'width',
     'height',
@@ -54,6 +55,8 @@ Map<Element, Map<String, String>> epubStyleProperties(
     'padding-block',
     'padding-block-start',
     'padding-block-end',
+    'list-style',
+    'list-style-type',
   };
   final images = document.querySelectorAll('*');
   final values =
@@ -65,10 +68,16 @@ Map<Element, Map<String, String>> epubStyleProperties(
                 name: (value: value, important: false, specificity: -1),
           },
       };
-  void apply(Element image, ast.DeclarationGroup group, int specificity) {
+  void apply(
+    Element image,
+    ast.DeclarationGroup group,
+    int specificity, {
+    required bool allowDisplay,
+  }) {
     for (final declaration in group.declarations.whereType<ast.Declaration>()) {
       final name = declaration.property.toLowerCase();
-      if (!supportedProperties.contains(name)) {
+      if (!supportedProperties.contains(name) ||
+          (name == 'display' && !allowDisplay)) {
         continue;
       }
       final expression = declaration.expression;
@@ -112,6 +121,18 @@ Map<Element, Map<String, String>> epubStyleProperties(
           continue;
         }
         expanded.addAll({'$name-start': parts.first, '$name-end': parts.last});
+      } else if (name == 'list-style') {
+        // Only the marker type is used by the text reader. Position and image
+        // markers have no inline equivalent and are intentionally ignored.
+        for (final part in value.split(RegExp(r'\s+'))) {
+          if (_listStyleTypes.contains(part)) {
+            expanded['list-style-type'] = part;
+            break;
+          }
+        }
+      } else if (name == 'list-style-type') {
+        if (!_listStyleTypes.contains(value)) continue;
+        expanded[name] = value;
       } else {
         expanded[name] = value;
       }
@@ -139,7 +160,11 @@ Map<Element, Map<String, String>> epubStyleProperties(
         ? source.text
         : readStylesheet(source.attributes['href'] ?? '');
     if (text == null || text.isEmpty) continue;
-    for (final rule in _styleRules(text, supportedProperties)) {
+    for (final (rule, allowDisplay) in _styleRules(
+      text,
+      supportedProperties,
+      conditionalRules: conditionalRules,
+    )) {
       if (!rule.declarationGroup.declarations.whereType<ast.Declaration>().any(
         (d) => supportedProperties.contains(d.property.toLowerCase()),
       )) {
@@ -165,7 +190,12 @@ Map<Element, Map<String, String>> epubStyleProperties(
         try {
           for (final image
               in document.querySelectorAll(query).where(values.containsKey)) {
-            apply(image, rule.declarationGroup, specificity);
+            apply(
+              image,
+              rule.declarationGroup,
+              specificity,
+              allowDisplay: allowDisplay,
+            );
           }
         } on FormatException {
           /* An unsupported selector does not discard the chapter. */
@@ -180,8 +210,17 @@ Map<Element, Map<String, String>> epubStyleProperties(
   for (final image in images) {
     final inline = image.attributes['style'];
     if (inline == null) continue;
-    for (final rule in _styleRules('img{$inline}', supportedProperties)) {
-      apply(image, rule.declarationGroup, 1000000000);
+    for (final (rule, allowDisplay) in _styleRules(
+      'img{$inline}',
+      supportedProperties,
+      conditionalRules: false,
+    )) {
+      apply(
+        image,
+        rule.declarationGroup,
+        1000000000,
+        allowDisplay: allowDisplay,
+      );
     }
   }
   return {
@@ -190,14 +229,84 @@ Map<Element, Map<String, String>> epubStyleProperties(
   };
 }
 
+const _listStyleTypes = {
+  'disc',
+  'circle',
+  'square',
+  'decimal',
+  'decimal-leading-zero',
+  'lower-alpha',
+  'upper-alpha',
+  'lower-latin',
+  'upper-latin',
+  'lower-roman',
+  'upper-roman',
+  'none',
+};
+
+/// Publisher styles commonly sit inside `@media screen`. Only the top-level
+/// rule set was read before, so those declarations were lost wholesale.
+typedef _StyleRule = (ast.RuleSet, bool);
+
+Iterable<_StyleRule> _screenRules(
+  Iterable<ast.TreeNode> nodes, {
+  bool allowDisplay = true,
+}) sync* {
+  for (final node in nodes) {
+    if (node is ast.RuleSet) {
+      yield (node, allowDisplay);
+    } else if (node is ast.MediaDirective) {
+      if (_appliesToScreen(node)) {
+        // Width, orientation and other viewport features are unknown on import.
+        final knownScreen = node.mediaQueries.any(
+          (query) =>
+              !(query.hasUnary && query.unary == 'NOT') &&
+              query.hasMediaType &&
+              const {'all', 'screen'}.contains(query.mediaType.toLowerCase()) &&
+              query.expressions.isEmpty,
+        );
+        yield* _screenRules(
+          node.rules,
+          allowDisplay: allowDisplay && knownScreen,
+        );
+      }
+    } else if (node is ast.SupportsDirective) {
+      // A negated condition describes the fallback branch. The reader already
+      // ignores unsupported properties; applying that branch would override
+      // the authored supported rules instead.
+      if (node.condition is ast.SupportsNegation) continue;
+      // The reader implements a fixed subset of CSS; keep authored rules and
+      // let the supported-property filter discard what it cannot render.
+      yield* _screenRules(node.groupRuleBody, allowDisplay: false);
+    }
+  }
+}
+
+bool _appliesToScreen(ast.MediaDirective directive) {
+  for (final query in directive.mediaQueries) {
+    if (query.hasUnary && query.unary == 'NOT') continue;
+    if (!query.hasMediaType) return true;
+    final type = query.mediaType.toLowerCase();
+    if (type == 'all' || type == 'screen') return true;
+  }
+  return false;
+}
+
 /// A malformed optional declaration must not make the complete book unreadable.
 /// csslib currently throws a TypeError for an empty hex color (`color: #;`).
 /// Recover only that stylesheet, keeping valid rules and supported declarations
 /// in their authored order instead of dropping all its layout information.
-Iterable<ast.RuleSet> _styleRules(String text, Set<String> supported) sync* {
-  List<ast.RuleSet>? parse(String source) {
+Iterable<_StyleRule> _styleRules(
+  String text,
+  Set<String> supported, {
+  bool conditionalRules = true,
+}) sync* {
+  Iterable<_StyleRule> rules(List<ast.TreeNode> nodes) => conditionalRules
+      ? _screenRules(nodes)
+      : nodes.whereType<ast.RuleSet>().map((rule) => (rule, true));
+  List<ast.TreeNode>? parse(String source) {
     try {
-      return css.parse(source).topLevels.whereType<ast.RuleSet>().toList();
+      return css.parse(source).topLevels.toList();
     } on TypeError {
       return null;
     } on FormatException {
@@ -207,7 +316,7 @@ Iterable<ast.RuleSet> _styleRules(String text, Set<String> supported) sync* {
 
   final whole = parse(text);
   if (whole != null) {
-    yield* whole;
+    yield* rules(whole);
     return;
   }
   var start = 0, open = -1;
@@ -220,7 +329,7 @@ Iterable<ast.RuleSet> _styleRules(String text, Set<String> supported) sync* {
       final end = boundary.offset;
       final rule = parse(text.substring(start, end + 1));
       if (rule != null) {
-        yield* rule;
+        yield* rules(rule);
       } else {
         final selector = text.substring(start, open);
         final body = text.substring(open + 1, end);
@@ -242,7 +351,9 @@ Iterable<ast.RuleSet> _styleRules(String text, Set<String> supported) sync* {
               .trim()
               .toLowerCase();
           if (supported.contains(property)) {
-            yield* parse('$selector{$declaration}') ?? const <ast.RuleSet>[];
+            yield* rules(
+              parse('$selector{$declaration}') ?? const <ast.TreeNode>[],
+            );
           }
         }
       }

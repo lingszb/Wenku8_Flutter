@@ -204,7 +204,6 @@ class LocalBookImporter extends ChangeNotifier {
     BuildContext context, {
     bool management = false,
     VoidCallback? onManage,
-    VoidCallback? onBatch,
     BookSync? sync,
   }) async {
     if (busy) return;
@@ -219,12 +218,6 @@ class LocalBookImporter extends ChangeNotifier {
             label: '导入书籍',
             onPressed: () => Navigator.pop(menu, 'local'),
           ),
-          if (onBatch != null)
-            GlassMenuItem(
-              order: 1,
-              label: '批量整理',
-              onPressed: () => Navigator.pop(menu, 'batch'),
-            ),
           if (management)
             GlassMenuItem(
               order: 2,
@@ -237,10 +230,6 @@ class LocalBookImporter extends ChangeNotifier {
     if (!context.mounted || action == null || _disposed) return;
     if (action == 'manage') {
       onManage?.call();
-      return;
-    }
-    if (action == 'batch') {
-      onBatch?.call();
       return;
     }
     await openImportPage(context, sync: sync);

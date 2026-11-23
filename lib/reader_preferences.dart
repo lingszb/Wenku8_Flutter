@@ -127,6 +127,9 @@ class ReaderPreferences {
     this.pageSpeed = ReaderPageSpeed.normal,
     this.hideSystemStatus = false,
     this.showStatusInfo = true,
+    this.showFooterVolume = true,
+    this.showFooterChapterNumber = true,
+    this.showFooterPageCount = true,
     this.chapterEntrance = false,
     this.nightTextBrightness = .82,
     this.letterSpacing = .1,
@@ -157,6 +160,9 @@ class ReaderPreferences {
   final ReaderPageSpeed pageSpeed;
   final bool hideSystemStatus;
   final bool showStatusInfo;
+  final bool showFooterVolume;
+  final bool showFooterChapterNumber;
+  final bool showFooterPageCount;
   bool get showReaderStatus => hideSystemStatus && showStatusInfo;
   final bool chapterEntrance;
   final double nightTextBrightness;
@@ -240,6 +246,9 @@ class ReaderPreferences {
     'pageSpeed': pageSpeed.name,
     'hideSystemStatus': hideSystemStatus,
     'showStatusInfo': showStatusInfo,
+    'showFooterVolume': showFooterVolume,
+    'showFooterChapterNumber': showFooterChapterNumber,
+    'showFooterPageCount': showFooterPageCount,
     'chapterEntrance': chapterEntrance,
     'nightTextBrightness': nightTextBrightness,
     'letterSpacing': letterSpacing,
@@ -270,6 +279,9 @@ class ReaderPreferences {
       'edgeBrightness',
       'hideSystemStatus',
       'showStatusInfo',
+      'showFooterVolume',
+      'showFooterChapterNumber',
+      'showFooterPageCount',
       'chapterEntrance',
       'paragraphGapOverride',
       'catalogueReversed',
@@ -330,6 +342,9 @@ class ReaderPreferences {
       edgeBrightness: json['edgeBrightness'] == true,
       hideSystemStatus: json['hideSystemStatus'] == true,
       showStatusInfo: json['showStatusInfo'] != false,
+      showFooterVolume: json['showFooterVolume'] != false,
+      showFooterChapterNumber: json['showFooterChapterNumber'] != false,
+      showFooterPageCount: json['showFooterPageCount'] != false,
       chapterEntrance: json['chapterEntrance'] == true,
       pageEffect: ReaderPageEffect.values.byName(
         json['pageEffect'] ?? 'staggered',
@@ -371,6 +386,9 @@ class ReaderPreferences {
     ReaderPageSpeed? pageSpeed,
     bool? hideSystemStatus,
     bool? showStatusInfo,
+    bool? showFooterVolume,
+    bool? showFooterChapterNumber,
+    bool? showFooterPageCount,
     bool? chapterEntrance,
     double? nightTextBrightness,
     double? letterSpacing,
@@ -408,6 +426,10 @@ class ReaderPreferences {
     pageSpeed: pageSpeed ?? this.pageSpeed,
     hideSystemStatus: hideSystemStatus ?? this.hideSystemStatus,
     showStatusInfo: showStatusInfo ?? this.showStatusInfo,
+    showFooterVolume: showFooterVolume ?? this.showFooterVolume,
+    showFooterChapterNumber:
+        showFooterChapterNumber ?? this.showFooterChapterNumber,
+    showFooterPageCount: showFooterPageCount ?? this.showFooterPageCount,
     chapterEntrance: chapterEntrance ?? this.chapterEntrance,
     nightTextBrightness: nightTextBrightness ?? this.nightTextBrightness,
     letterSpacing: letterSpacing ?? this.letterSpacing,
@@ -455,6 +477,9 @@ class ReaderPreferences {
     pageSpeed: pageSpeed,
     hideSystemStatus: hideSystemStatus,
     showStatusInfo: showStatusInfo,
+    showFooterVolume: showFooterVolume,
+    showFooterChapterNumber: showFooterChapterNumber,
+    showFooterPageCount: showFooterPageCount,
     chapterEntrance: chapterEntrance,
     statusSideInset: statusSideInset,
     statusFontSize: statusFontSize,

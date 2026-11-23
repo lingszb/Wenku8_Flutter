@@ -148,6 +148,7 @@ key.properties
 !/test/fork_release_update_test.dart
 !/test/local_scan_test.dart
 !/test/local_book_metadata_test.dart
+!/test/epub_parsing_test.dart
 !/test/shelf_category_picker_test.dart
 /integration_test/
 /test_driver/

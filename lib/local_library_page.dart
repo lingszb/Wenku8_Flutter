@@ -55,8 +55,7 @@ const _localRowGlassAction = bool.fromEnvironment(
 );
 
 class LocalLibraryController extends ChangeNotifier {
-  void Function(BuildContext)? importMenu;
-  VoidCallback? search, refresh;
+  VoidCallback? importBooks, search, refresh;
   bool importing = false;
   void changed() => notifyListeners();
 }
@@ -79,17 +78,11 @@ Widget _localLibraryHeader(
       const Expanded(
         child: ArchiveMasthead(title: '本地', code: 'LOCAL ARCHIVE'),
       ),
-      GlassMenuAnchor(
-        child: Builder(
-          builder: (anchor) => GlassIconButton(
-            key: const ValueKey('local-import-book'),
-            icon: CupertinoIcons.arrow_down_doc,
-            label: '本地书籍操作',
-            onPressed: controller?.importMenu == null
-                ? null
-                : () => controller!.importMenu!(anchor),
-          ),
-        ),
+      GlassIconButton(
+        key: const ValueKey('local-import-book'),
+        icon: CupertinoIcons.arrow_down_doc,
+        label: '导入书籍',
+        onPressed: controller?.importBooks,
       ),
       if (historyState != null && historyRepository != null)
         GlassIconButton(
@@ -364,7 +357,7 @@ class _LocalLibraryPageState extends State<LocalLibraryPage>
     WidgetsBinding.instance.addObserver(this);
     _controller.refresh = _reload;
     _controller.search = widget.onSearch ?? _toggleSearch;
-    _controller.importMenu = _importMenu;
+    _controller.importBooks = _openImport;
     _importer.addListener(_importChanged);
     _importing = _importer.busy;
     _importProgress = _importer.progress;
@@ -424,18 +417,22 @@ class _LocalLibraryPageState extends State<LocalLibraryPage>
     }
   }
 
-  Future<void> _importMenu(BuildContext anchor) async {
+  Future<void> _openImport() async {
     _searchFocus.unfocus();
-    await _importer.showMenu(
-      anchor,
-      sync: _sync,
-      onBatch: () => openLocalBookBatch(
+    await _importer.openImportPage(context, sync: _sync);
+    if (mounted) _reload();
+  }
+
+  void _openBatch() {
+    _searchFocus.unfocus();
+    unawaited(
+      openLocalBookBatch(
         context,
         books: widget.books,
         library: widget.state,
+        documents: widget.documents,
       ),
     );
-    if (mounted) _reload();
   }
 
   void _importChanged() {
@@ -447,7 +444,7 @@ class _LocalLibraryPageState extends State<LocalLibraryPage>
     });
     _controller
       ..importing = _importing
-      ..importMenu = _importing ? null : _importMenu
+      ..importBooks = _importing ? null : _openImport
       ..changed();
   }
 
@@ -867,7 +864,7 @@ class _LocalLibraryPageState extends State<LocalLibraryPage>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _controller
-      ..importMenu = null
+      ..importBooks = null
       ..search = null
       ..refresh = null;
     if (widget.controller == null) _controller.dispose();
@@ -1085,7 +1082,38 @@ class _LocalLibraryPageState extends State<LocalLibraryPage>
                               Column(
                                 crossAxisAlignment: CrossAxisAlignment.stretch,
                                 children: [
-                                  if (widget.showcase) _readingEntries(),
+                                  if (widget.showcase)
+                                    _readingEntries()
+                                  else ...[
+                                    ContentPanel(
+                                      key: const ValueKey(
+                                        'local-batch-organizer',
+                                      ),
+                                      onTap: _importing ? null : _openBatch,
+                                      child: const Row(
+                                        children: [
+                                          ArchiveIcon.symbol(
+                                            ArchiveSymbol.wand,
+                                            size: 22,
+                                          ),
+                                          SizedBox(width: 12),
+                                          Expanded(
+                                            child: AppText(
+                                              '批量整理',
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                            ),
+                                          ),
+                                          ArchiveIcon.symbol(
+                                            ArchiveSymbol.forward,
+                                            size: 16,
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    const SizedBox(height: 14),
+                                  ],
                                   if (shelfMode)
                                     _shelfToolbar(
                                       organization!,

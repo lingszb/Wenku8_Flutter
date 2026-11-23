@@ -48,6 +48,9 @@ abstract final class LocalPlatform {
   static Future<void> shareImage(Uint8List bytes, String name) =>
       channel.invokeMethod<void>('shareImage', {'bytes': bytes, 'name': name});
 
+  static Future<Map<String, int>> storageUsage() async =>
+      await channel.invokeMapMethod<String, int>('storageUsage') ?? {};
+
   /// Saves app-rendered PNG bytes to Photos/Gallery, never a file picker.
   /// Harmony receives its one-use authorization from GallerySaveButton.
   static Future<void> saveImageToGallery(

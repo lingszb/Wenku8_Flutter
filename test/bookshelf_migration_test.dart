@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:wenku8_flutter/archive_carousel.dart';
@@ -15,6 +16,8 @@ import 'package:wenku8_flutter/library_backup.dart';
 import 'package:wenku8_flutter/local_books.dart';
 import 'package:wenku8_flutter/local_library_page.dart';
 import 'package:wenku8_flutter/pages.dart';
+import 'package:wenku8_flutter/local_platform.dart';
+import 'package:wenku8_flutter/reader_illustrations.dart';
 
 class _Books extends LocalBookStore {
   _Books(this.items) : super(Directory('.tmp/verification/synthetic-library'));
@@ -135,6 +138,95 @@ void main() {
       ]);
     },
   );
+
+  testWidgets('storage separates disk statistics from illustration memory', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(320, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final messenger = tester.binding.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(LocalPlatform.channel, (call) async {
+      if (call.method != 'storageUsage') return null;
+      return {
+        'appCode': 100 * 1024 * 1024,
+        'appData': 200 * 1024 * 1024,
+        'appCache': 20 * 1024 * 1024,
+        'phoneTotal': 100 * 1024 * 1024 * 1024,
+        'phoneAvailable': 40 * 1024 * 1024 * 1024,
+      };
+    });
+    addTearDown(
+      () => messenger.setMockMethodCallHandler(LocalPlatform.channel, null),
+    );
+    final cache = ReaderIllustrationCache.shared;
+    final reader = cache.offlineReader;
+    cache.clearMemory();
+    cache.offlineReader = (_) async => Uint8List(1024);
+    addTearDown(() {
+      cache.clearMemory();
+      cache.offlineReader = reader;
+    });
+    await cache.load('test-illustration');
+
+    await tester.pumpWidget(MaterialApp(home: SettingsPage(state: state)));
+    final entry = find.byKey(const ValueKey('settings-data-entry'));
+    await tester.ensureVisible(entry);
+    await tester.tap(entry);
+    await tester.pumpAndSettle();
+    expect(find.text('历史离线缓存'), findsNothing);
+    expect(find.text('App 存储'), findsOneWidget);
+    expect(find.text('插图内存缓存'), findsOneWidget);
+    expect(
+      tester
+          .widget<LinearProgressIndicator>(
+            find.byWidgetPredicate(
+              (w) =>
+                  w is LinearProgressIndicator &&
+                  w.semanticsLabel == '插图内存缓存用量',
+            ),
+          )
+          .value,
+      1024 / cache.maxBytes,
+    );
+    final clear = find.text('清理插图内存缓存');
+    await tester.ensureVisible(clear);
+    await tester.tap(clear);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('清理插图'));
+    await tester.pumpAndSettle();
+    expect(cache.encodedBytes, 0);
+    expect(
+      tester
+          .widget<LinearProgressIndicator>(
+            find.byWidgetPredicate(
+              (w) =>
+                  w is LinearProgressIndicator &&
+                  w.semanticsLabel == '插图内存缓存用量',
+            ),
+          )
+          .value,
+      0,
+    );
+    final phone = find.text('手机内部存储');
+    await tester.ensureVisible(phone);
+    await tester.pumpAndSettle();
+    expect(phone, findsOneWidget);
+    expect(
+      tester
+          .widget<LinearProgressIndicator>(
+            find.byWidgetPredicate(
+              (w) =>
+                  w is LinearProgressIndicator &&
+                  w.semanticsLabel == '手机内部存储已用',
+            ),
+          )
+          .value,
+      .6,
+    );
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets(
     'navigation settings change order and startup without device automation',

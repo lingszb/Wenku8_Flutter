@@ -40,7 +40,7 @@ Future<_StoredNavigation> _readStoredNavigation(
       autoTitles: job.options.autoTitles,
       mergeUnlistedIllustrations: job.options.inlineEpubImages,
       preserveRichText: (source['richText'] as int? ?? 0) > 0,
-      richLayoutLevel: (source['richText'] as int? ?? 0) >= 2 ? 2 : 1,
+      richLayoutLevel: source['richText'] as int? ?? 1,
       imageNames: names,
       saveImage: (name, file) => names[file.name] = name,
       saveBody: (i, body) =>
@@ -53,6 +53,7 @@ Future<_StoredNavigation> _readStoredNavigation(
         {
           'layout-rich-v1',
           'layout-rich-v2',
+          'layout-rich-v3',
           'layout-markup-v1',
         }.contains(source['layoutFolder'])
         ? '${source['layoutFolder']}/'
@@ -108,7 +109,7 @@ Future<_StoredNavigation> _readStoredNavigation(
         ...after.formats.keys,
         // A corrected language-only format can disappear from the new body.
         // Its old tag still needs removal without changing paragraph slots.
-        if (source['richText'] == 2) ...before.formats.keys,
+        if ((source['richText'] as int? ?? 0) >= 2) ...before.formats.keys,
       };
       for (final index in indices) {
         final fresh = after.formats[index] ?? const ReaderRichParagraph();
@@ -126,7 +127,7 @@ Future<_StoredNavigation> _readStoredNavigation(
                 jsonEncode(refs.map((r) => r.toJson()).toList())) {
           next = next.withReferences(refs);
         }
-        if (source['richText'] == 2) {
+        if ((source['richText'] as int? ?? 0) >= 2) {
           if (after.formats.containsKey(index)) {
             next = next.replaceSpacing(fresh.spacing);
           }
@@ -218,7 +219,7 @@ Future<_StoredNavigation> _restoreMarkupBody(
     autoTitles: job.options.autoTitles,
     mergeUnlistedIllustrations: job.options.inlineEpubImages,
     preserveRichText: (source['richText'] as int? ?? 0) > 0,
-    richLayoutLevel: (source['richText'] as int? ?? 0) >= 2 ? 2 : 1,
+    richLayoutLevel: source['richText'] as int? ?? 1,
     normalizeMarkup: false,
     imageNames: {for (final e in media.entries) e.value as String: e.key},
     saveImage: (_, _) {},
@@ -362,7 +363,7 @@ extension LocalBookNavigation on LocalBookStore {
         if (source == null ||
             source['epubNavigation'] == 1 &&
                 source['epubMarkup'] == epubMarkupVersion &&
-                (source['richText'] != 2 ||
+                ((source['richText'] as int? ?? 0) < 2 ||
                     source['publisherSpacing'] == 1 &&
                         source['publisherLanguages'] ==
                             epubPublisherLanguageVersion) ||
@@ -392,8 +393,8 @@ extension LocalBookNavigation on LocalBookStore {
           ...?restored.source,
           'epubMarkup': epubMarkupVersion,
           'epubNavigation': 1,
-          if (source['richText'] == 2) 'publisherSpacing': 1,
-          if (source['richText'] == 2)
+          if ((source['richText'] as int? ?? 0) >= 2) 'publisherSpacing': 1,
+          if ((source['richText'] as int? ?? 0) >= 2)
             'publisherLanguages': epubPublisherLanguageVersion,
         };
         final nextRecord = {

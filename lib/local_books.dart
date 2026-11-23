@@ -51,6 +51,13 @@ part 'local_book_links.dart';
 part 'local_document_links.dart';
 part 'local_book_navigation.dart';
 
+/// Bumped when saved paragraph formats gain fields older readers ignore.
+const epubRichTextVersion = 3;
+
+/// Imported package metadata that can be backfilled without rewriting prose.
+const epubMetadataVersion = 2;
+const _maxBookRecordBytes = 4 * 1024 * 1024;
+
 class ImportedBook {
   const ImportedBook(
     this.novel,
@@ -225,11 +232,16 @@ Novel _novel(
   String? cover,
   BookNavigation? navigation,
   String summary = '已保存到本地书库，可离线阅读。',
+  List<String> tags = const [],
+  String subtitle = '',
+  String illustrator = '',
+  String publisher = '',
+  String publishedDate = '',
 }) => Novel(
   id: id,
   title: _metadataText(title),
   author: author.isEmpty ? '本地书籍' : _metadataText(author),
-  genre: '本地导入',
+  genre: localBookGenre(tags),
   summary: summary,
   colors: const [Color(0xFF646464), Color(0xFF303030)],
   chapters: List.unmodifiable(chapters),
@@ -237,6 +249,10 @@ Novel _novel(
   isComplete: true,
   coverUrl: cover,
   navigation: navigation,
+  subtitle: _metadataText(subtitle),
+  illustrator: _metadataText(illustrator),
+  publisher: _metadataText(publisher),
+  publishedDate: _metadataText(publishedDate),
 );
 
 /// Entries are decoded lazily, only after declared sizes and names are checked.
@@ -251,6 +267,191 @@ Archive boundedZip(
   maxEntrySize: maxEntrySize,
 );
 
+typedef _EpubMetadata = ({
+  String title,
+  String subtitle,
+  String author,
+  String illustrator,
+  List<String> tags,
+  String description,
+  String publisher,
+  String date,
+});
+
+/// OPF creators can carry their role as `opf:role` (EPUB 2) or as a refined
+/// `meta property="role"` row (EPUB 3). Read both so an illustrator is never
+/// mistaken for the author and can be shown on the book details page.
+String _epubCreatorRole(XmlElement creator, Map<String, String> refined) {
+  final declared = creator.attributes
+      .where((a) => a.name.local == 'role')
+      .map((a) => a.value)
+      .firstOrNull;
+  final id = creator.getAttribute('id');
+  return (declared ?? (id == null ? null : refined[id]) ?? '')
+      .trim()
+      .toLowerCase()
+      .replaceAll(RegExp(r'\.$'), '');
+}
+
+_EpubMetadata _epubMetadata(List<XmlElement> elements) {
+  final titleTypes = <String, String>{};
+  final refinedRoles = <String, String>{};
+  for (final meta in elements.where((e) => e.name.local == 'meta')) {
+    final id = meta.getAttribute('refines')?.replaceFirst('#', '');
+    if (id == null) continue;
+    switch (meta.getAttribute('property')) {
+      case 'title-type':
+        titleTypes[id] = meta.innerText.trim().toLowerCase();
+      case 'role':
+        refinedRoles[id] = meta.innerText.trim().toLowerCase();
+    }
+  }
+  String idOf(XmlElement element) => element.getAttribute('id') ?? '';
+
+  // EPUB 3 may carry several dc:title rows. Pick the refined main title before
+  // falling back to document order; a refined subtitle is kept separately.
+  final titles = elements.where((e) => e.name.local == 'title').toList();
+  final title =
+      (titles.where((e) => titleTypes[idOf(e)] == 'main').firstOrNull ??
+              titles.firstOrNull)
+          ?.innerText
+          .trim() ??
+      '';
+  final subtitle =
+      titles
+          .where((e) => titleTypes[idOf(e)] == 'subtitle')
+          .map((e) => e.innerText.trim())
+          .where((value) => value.isNotEmpty && value != title)
+          .firstOrNull ??
+      '';
+
+  final creators = elements.where((e) => e.name.local == 'creator').toList();
+  String roleOf(XmlElement element) => _epubCreatorRole(element, refinedRoles);
+  // An illustrator or translator is not the author. Prefer an explicit aut /
+  // empty role, then the first creator that is not a visual contributor.
+  final author =
+      (creators.where((e) {
+                final role = roleOf(e);
+                return role.isEmpty || role == 'aut';
+              }).firstOrNull ??
+              creators
+                  .where(
+                    (e) => !{'ill', 'trl', 'edt', 'bkp'}.contains(roleOf(e)),
+                  )
+                  .firstOrNull)
+          ?.innerText
+          .trim() ??
+      '';
+  final illustrator = creators
+      .where((e) => roleOf(e) == 'ill')
+      .map((e) => e.innerText.trim())
+      .where((value) => value.isNotEmpty)
+      .toSet()
+      .join('、');
+  final tags = normalizeBookTags([
+    for (final e in elements.where((e) => e.name.local == 'subject'))
+      e.innerText.trim(),
+  ]).take(100).toList(growable: false);
+  final description = _epubPlainText(
+    elements
+            .where((e) => e.name.local == 'description')
+            .firstOrNull
+            ?.innerText
+            .trim() ??
+        '',
+  );
+  final publisher =
+      elements
+          .where((e) => e.name.local == 'publisher')
+          .firstOrNull
+          ?.innerText
+          .trim() ??
+      '';
+  final date = _normalizeEpubDate(
+    elements
+            .where((e) => e.name.local == 'date')
+            .firstOrNull
+            ?.innerText
+            .trim() ??
+        '',
+  );
+  return (
+    title: title,
+    subtitle: subtitle,
+    author: author,
+    illustrator: illustrator,
+    tags: tags,
+    description: description,
+    publisher: publisher,
+    date: date,
+  );
+}
+
+/// Descriptions are authored as HTML fragments. The reader stores plain prose,
+/// so keep paragraph breaks but discard markup and collapse layout whitespace.
+String _epubPlainText(String value) {
+  final text = value.trim();
+  if (text.isEmpty) return '';
+  if (!RegExp(r'</?[a-zA-Z][^>]*>').hasMatch(text)) return _metadataText(text);
+  const blocks = {
+    'p',
+    'div',
+    'li',
+    'h1',
+    'h2',
+    'h3',
+    'h4',
+    'h5',
+    'h6',
+    'blockquote',
+    'pre',
+    'section',
+    'article',
+  };
+  final buffer = StringBuffer();
+  void walk(html.Node node) {
+    if (node is html.Text) {
+      buffer.write(node.text);
+      return;
+    }
+    if (node is! html.Element) return;
+    if (node.localName == 'br') {
+      buffer.write('\n');
+      return;
+    }
+    final block = blocks.contains(node.localName);
+    if (block) buffer.write('\n');
+    for (final child in node.nodes) {
+      walk(child);
+    }
+    if (block) buffer.write('\n');
+  }
+
+  for (final node in html.parseFragment(text).nodes) {
+    walk(node);
+  }
+  final collapsed = buffer
+      .toString()
+      .replaceAll(RegExp(r'[ \t\u00a0]+'), ' ')
+      .replaceAll(RegExp(r' *\n *'), '\n')
+      .replaceAll(RegExp(r'\n{2,}'), '\n\n')
+      .trim();
+  return _metadataText(collapsed);
+}
+
+/// EPUB dates may be full W3C timestamps. Keep the authored date precision.
+String _normalizeEpubDate(String value) {
+  final text = value.trim();
+  if (text.isEmpty) return '';
+  final match = RegExp(
+    r'^(\d{4})(?:-(\d{1,2}))?(?:-(\d{1,2}))?',
+  ).firstMatch(text);
+  if (match == null) return _metadataText(text);
+  final month = match[2]?.padLeft(2, '0');
+  final day = match[3]?.padLeft(2, '0');
+  return [match[1]!, ?month, ?day].join('-');
+}
+
 ImportedBook _epub(
   LocalBookInput input,
   int id,
@@ -264,7 +465,7 @@ ImportedBook _epub(
   bool autoTitles = true,
   bool mergeUnlistedIllustrations = true,
   bool preserveRichText = true,
-  int richLayoutLevel = 2,
+  int richLayoutLevel = epubRichTextVersion,
   Map<String, String> imageNames = const {},
   bool coverOnly = false,
   bool normalizeMarkup = true,
@@ -332,6 +533,10 @@ ImportedBook _epub(
           ?.innerText
           .trim() ??
       '';
+  final metadata = _epubMetadata(elements);
+  final titleText = metadata.title;
+  final creatorText = metadata.author;
+  final subjects = metadata.tags;
   final manifest =
       <String, ({String path, String type, String props, String fallback})>{};
   final external = <String>{};
@@ -608,7 +813,18 @@ ImportedBook _epub(
   final coverUrl = coverPath == null ? null : addImage(coverPath, cover: true);
   if (coverOnly) {
     return ImportedBook(
-      _novel(id, field('title'), field('creator'), const [], cover: coverUrl),
+      _novel(
+        id,
+        titleText,
+        creatorText,
+        const [],
+        cover: coverUrl,
+        tags: subjects,
+        subtitle: metadata.subtitle,
+        illustrator: metadata.illustrator,
+        publisher: metadata.publisher,
+        publishedDate: metadata.date,
+      ),
       digest,
       const [],
       images,
@@ -718,7 +934,7 @@ ImportedBook _epub(
       } on FormatException {
         return null;
       }
-    });
+    }, conditionalRules: richLayoutLevel >= 3);
     final imageLayouts = {
       for (final image in document.querySelectorAll('img, image'))
         image: LocalImageLayout.fromProperties(styles[image] ?? {}),
@@ -730,6 +946,7 @@ ImportedBook _epub(
           '',
       baseLanguage: field('language'),
       languageRoot: document.body,
+      extendedStyles: richLayoutLevel >= 3,
     );
     ReaderBlockSpacing blockSpacing(html.Element node) {
       final writing = rich.inherited(node, 'writing-mode').isNotEmpty
@@ -987,6 +1204,7 @@ ImportedBook _epub(
       }
     }
 
+    final listStack = <_EpubListState>[];
     void visit(html.Node node) {
       if (node is html.Text) {
         if (preserveRichText && richLayoutLevel >= 2) {
@@ -1082,13 +1300,14 @@ ImportedBook _epub(
       if (tag == 'img' || tag == 'image') {
         flush();
         rememberAnchor();
-        final src =
+        String? src =
             node.attributes['src'] ??
             node.attributes['href'] ??
             node.attributes.entries
                 .where((e) => e.key.toString() == 'xlink:href')
                 .firstOrNull
                 ?.value;
+        if (richLayoutLevel >= 3) src ??= _pictureSource(node);
         if (src != null) {
           try {
             final path = resolve(file.path, src);
@@ -1149,6 +1368,17 @@ ImportedBook _epub(
               breaks.contains(styles[node]?['page-break-after']));
       final block =
           blocks.contains(tag) ||
+          richLayoutLevel >= 3 &&
+              const {
+                'h5',
+                'h6',
+                'figure',
+                'figcaption',
+                'dl',
+                'dt',
+                'dd',
+                'pre',
+              }.contains(tag) ||
           preserveRichText &&
               richLayoutLevel >= 2 &&
               {'table', 'tr', 'thead', 'tbody', 'tfoot'}.contains(tag) ||
@@ -1169,10 +1399,21 @@ ImportedBook _epub(
         rememberAnchor();
         if (preserveRichText) rich.begin(node);
       }
+      final listState =
+          preserveRichText &&
+              richLayoutLevel >= 3 &&
+              (tag == 'ol' || tag == 'ul')
+          ? _startList(node, styles)
+          : null;
+      if (listState != null) listStack.add(listState);
+      final marker = preserveRichText && richLayoutLevel >= 3 && tag == 'li'
+          ? _liMarker(node, listStack, styles)
+          : '';
       final first = output.length;
       for (final child in node.nodes) {
         visit(child);
       }
+      if (listState != null) listStack.removeLast();
       if (block) flush();
       if (block && preserveRichText && richLayoutLevel >= 2 && tag != 'br') {
         final spacing = blockSpacing(node);
@@ -1207,6 +1448,10 @@ ImportedBook _epub(
             );
           }
         }
+      }
+      if (marker.isNotEmpty && output.length > first) {
+        formats[first] = (formats[first] ?? const ReaderRichParagraph())
+            .withMarker('$marker ');
       }
       // Page breaks belong to an element's boundary, not every descendant.
       if (output.length > first) {
@@ -1254,7 +1499,7 @@ ImportedBook _epub(
       '原书有 ${unavailableImages.length} 张图片缺失、超过大小限制或暂不支持，其余正文和原书文件已保留。',
     );
   }
-  final title = field('title');
+  final title = titleText;
   final preferredNcx =
       manifest[elements
           .where((e) => e.name.local == 'spine')
@@ -1352,13 +1597,20 @@ ImportedBook _epub(
               '',
             )
           : title,
-      field('creator'),
+      creatorText,
       chapters,
       cover: coverUrl,
       navigation: navigation,
+      tags: subjects,
       summary: damage.isEmpty
-          ? '已保存到本地书库，可离线阅读。'
+          ? metadata.description.isEmpty
+                ? '已保存到本地书库，可离线阅读。'
+                : metadata.description
           : '已导入可读部分，${damagedChapters.length} 个章节无法读取，已发现 ${damage.length} 处资源问题。原文件未改动，请重新获取完整原件。',
+      subtitle: metadata.subtitle,
+      illustrator: metadata.illustrator,
+      publisher: metadata.publisher,
+      publishedDate: metadata.date,
     ),
     digest,
     bodies,
@@ -1641,7 +1893,8 @@ Future<_ImportedFile> _importOriginal(_ImportJob job) async {
       'encoding': text == null && job.decodedPath == null ? 'utf8' : 'decoded',
       'parser': options.inlineEpubImages ? 3 : 2,
       'imageSizing': 1,
-      if (isEpub) 'richText': 2,
+      if (isEpub) 'richText': epubRichTextVersion,
+      if (isEpub) 'metadata': epubMetadataVersion,
       if (isEpub) 'epubNavigation': 1,
       if (isEpub) 'publisherSpacing': 1,
       if (isEpub) 'publisherLanguages': epubPublisherLanguageVersion,
@@ -1742,7 +1995,7 @@ Future<_ImportedFile> _importOriginal(_ImportJob job) async {
           },
       ],
     });
-    if (utf8.encode(metadata).length > 4 * 1024 * 1024) {
+    if (utf8.encode(metadata).length > _maxBookRecordBytes) {
       throw const FormatException('书籍目录过大，请拆分原书后导入');
     }
     await File(
@@ -1784,7 +2037,78 @@ List<String> _readImageSizing(_ImageSizingJob job) {
       // changes image sizing only.
       mergeUnlistedIllustrations: job.inlineEpubImages,
       preserveRichText: false,
+      richLayoutLevel: 2,
     ).bodies;
+  } finally {
+    stream.closeSync();
+  }
+}
+
+class _MetadataBackfillJob {
+  const _MetadataBackfillJob(this.root, this.id, this.name, this.digest);
+  final String root;
+  final int id;
+  final String name;
+  final String digest;
+}
+
+/// Reads only the package document of a stored EPUB. Prose, sidecar files and
+/// the original archive stay untouched.
+Map<String, Object?>? _readStoredEpubMetadata(_MetadataBackfillJob job) {
+  final stream = InputFileStream('${job.root}/${job.id}/original');
+  try {
+    final archive = readLocalBookArchive(stream, maxSize: 1024 * 1024 * 1024);
+    final files = {
+      for (final file in archive)
+        if (file.isFile) file.name: file,
+    };
+    String read(String path) {
+      final file = files[path];
+      if (file == null) throw const FormatException('EPUB 缺少资源');
+      if (file.size > 8 * 1024 * 1024) {
+        throw const FormatException('EPUB 文本资源超过 8 MiB');
+      }
+      return decodeLocalMarkup(readLocalBookArchiveEntry(file));
+    }
+
+    String resolve(String base, String href) {
+      final uri = Uri(
+        scheme: 'https',
+        host: 'local',
+        pathSegments: ['', if (base.isNotEmpty) ...base.split('/')],
+      ).resolve(href);
+      if (uri.scheme != 'https' || uri.host != 'local') {
+        throw const FormatException('EPUB 引用了外部资源');
+      }
+      return Uri.decodeComponent(uri.path.substring(1));
+    }
+
+    final container = XmlDocument.parse(read('META-INF/container.xml'));
+    final reference = container.descendants
+        .whereType<XmlElement>()
+        .where((e) => e.name.local == 'rootfile')
+        .firstOrNull
+        ?.getAttribute('full-path');
+    if (reference == null || reference.trim().isEmpty) return null;
+    final opf = resolve('', reference);
+    final package = XmlDocument.parse(read(opf));
+    final metadata = _epubMetadata(
+      package.descendants.whereType<XmlElement>().toList(),
+    );
+    return {
+      'title': metadata.title,
+      'subtitle': metadata.subtitle,
+      'author': metadata.author,
+      'illustrator': metadata.illustrator,
+      'description': metadata.description,
+      'tags': metadata.tags,
+      'publisher': metadata.publisher,
+      'date': metadata.date,
+    };
+  } catch (_) {
+    // A damaged or missing original keeps the imported snapshot readable and
+    // is retried after the book is re-imported or the file is restored.
+    return null;
   } finally {
     stream.closeSync();
   }
@@ -1827,7 +2151,7 @@ Future<_LocalLibrarySnapshot> _loadLocalLibrary(String path) async {
     if (id == null || !isLocalBook(id)) continue;
     try {
       final metadata = File('${entity.path}/book.json');
-      if (await metadata.length() > 4 * 1024 * 1024) continue;
+      if (await metadata.length() > _maxBookRecordBytes) continue;
       final map =
           jsonDecode(await metadata.readAsString()) as Map<String, dynamic>;
       final novel = Novel.fromSnapshot(Map<String, dynamic>.from(map['novel']));
@@ -1970,6 +2294,7 @@ class LocalBookStore extends ChangeNotifier
   String? seriesError;
   Future<void> _writes = Future.value();
   final _imageUpgrades = <int, Future<void>>{};
+  final _metadataBackfills = <int>{};
   bool _disposed = false;
   List<Novel>? _visibleBooks;
   @override
@@ -2071,8 +2396,102 @@ class LocalBookStore extends ChangeNotifier
   }
 
   Novel? book(int id) {
+    _backfillMetadata(id);
     final value = _seriesBooks[id] ?? _books[id];
     return value == null ? null : _withCover(value);
+  }
+
+  /// Older imports lack the newer OPF metadata. Refresh it once, lazily, when
+  /// the book is first looked up; the original archive is never rewritten.
+  void _backfillMetadata(int id) {
+    final source = _sources[id];
+    if (source == null ||
+        source['metadata'] == epubMetadataVersion ||
+        !(source['name'] as String? ?? '').toLowerCase().endsWith('.epub')) {
+      return;
+    }
+    if (!_metadataBackfills.add(id)) return;
+    final work = _writes
+        .catchError((Object _) {})
+        .then((_) => _runMetadataBackfill(id));
+    _writes = work.catchError((Object _) {});
+  }
+
+  Future<void> _runMetadataBackfill(int id) async {
+    final source = _sources[id], current = _books[id];
+    if (source == null || current == null) return;
+    if (source['metadata'] == epubMetadataVersion) return;
+    final name = source['name'], digest = source['digest'];
+    if (name is! String ||
+        digest is! String ||
+        !name.toLowerCase().endsWith('.epub')) {
+      return;
+    }
+    final original = File('${directory.path}/$id/original');
+    if (!await original.exists()) return;
+    final parsed = await compute(
+      _readStoredEpubMetadata,
+      _MetadataBackfillJob(directory.path, id, name, digest),
+      debugLabel: 'local-epub-metadata',
+    );
+    if (parsed == null || _disposed) return;
+    final latestSource = _sources[id];
+    if (latestSource == null || latestSource['digest'] != digest) return;
+    final latest = _books[id];
+    if (latest == null) return;
+    final metadataFile = File('${directory.path}/$id/book.json');
+    final record =
+        jsonDecode(await metadataFile.readAsString()) as Map<String, dynamic>;
+    final recordSource = Map<String, dynamic>.from(
+      record['source'] as Map? ?? const {},
+    );
+    if (recordSource['digest'] != digest) return;
+    final recordNovel = Map<String, dynamic>.from(
+      record['novel'] as Map? ?? const {},
+    );
+    const fallbackSummary = '已保存到本地书库，可离线阅读。';
+    final description = parsed['description'] as String? ?? '';
+    final edits = recordSource['userMetadata'] as Map?;
+    for (final key in const ['title', 'author']) {
+      final value = parsed[key] as String?;
+      if (edits?.containsKey(key) != true &&
+          value != null &&
+          value.isNotEmpty) {
+        recordNovel[key] = _metadataText(value);
+      }
+    }
+    final tags = (parsed['tags'] as List).cast<String>();
+    if (edits?.containsKey('tags') != true && tags.isNotEmpty) {
+      recordNovel['genre'] = localBookGenre([
+        ...latest.tags,
+        ...tags,
+      ], series: edits?['isOmnibus'] == true);
+    }
+    if (description.isNotEmpty &&
+        edits?.containsKey('summary') != true &&
+        (latest.summary.trim().isEmpty || latest.summary == fallbackSummary)) {
+      recordNovel['summary'] = description;
+    }
+    for (final key in const ['subtitle', 'illustrator', 'publisher']) {
+      final value = parsed[key];
+      if (value is String && value.isNotEmpty) recordNovel[key] = value;
+    }
+    final date = parsed['date'];
+    if (date is String && date.isNotEmpty) recordNovel['publishedDate'] = date;
+    recordSource['metadata'] = epubMetadataVersion;
+    final nextRecord = {
+      ...record,
+      'novel': recordNovel,
+      'source': recordSource,
+    };
+    if (utf8.encode(jsonEncode(nextRecord)).length > _maxBookRecordBytes) {
+      return;
+    }
+    await _maintenanceRecord(metadataFile, nextRecord);
+    if (_disposed) return;
+    _sources[id] = recordSource;
+    _books[id] = Novel.fromSnapshot(recordNovel).withChapters(latest.chapters);
+    notifyListeners();
   }
 
   Novel _withCover(Novel source) {
@@ -2343,6 +2762,7 @@ class LocalBookStore extends ChangeNotifier
     _sources
       ..clear()
       ..addAll(loaded.sources);
+    _metadataBackfills.clear();
     LocalBookMedia.root = directory;
     LocalBookMedia.importWarnings = this;
     LocalBookMedia.externalDimensions = (id, names) => _withOriginalInput(
@@ -2581,7 +3001,7 @@ class LocalBookStore extends ChangeNotifier
       }
     }
     final file = File(
-      '${directory.path}/$base/${{'layout-rich-v1', 'layout-rich-v2', 'layout-markup-v1'}.contains(_sources[base]?['layoutFolder']) ? '${_sources[base]!['layoutFolder']}/' : ''}c${source?.chapterId ?? chapter.id}.txt',
+      '${directory.path}/$base/${{'layout-rich-v1', 'layout-rich-v2', 'layout-rich-v3', 'layout-markup-v1'}.contains(_sources[base]?['layoutFolder']) ? '${_sources[base]!['layoutFolder']}/' : ''}c${source?.chapterId ?? chapter.id}.txt',
     );
     final body = await readLocalText(file);
     if (_sources[base]?['imageSizing'] != 1 &&
@@ -3249,4 +3669,152 @@ class LocalBookStore extends ChangeNotifier
     }
     super.dispose();
   }
+}
+
+class _EpubListState {
+  _EpubListState(this.ordered, this.next, this.reversed, this.type);
+  final bool ordered;
+  int next;
+  final bool reversed;
+  final String type;
+}
+
+_EpubListState _startList(
+  html.Element node,
+  Map<html.Element, Map<String, String>> styles,
+) {
+  final ordered = node.localName == 'ol';
+  final reversed = ordered && node.attributes.containsKey('reversed');
+  var type = _listStyleType(node, styles);
+  if (type.isEmpty) {
+    type = switch (ordered ? node.attributes['type'] : null) {
+      'a' => 'lower-alpha',
+      'A' => 'upper-alpha',
+      'i' => 'lower-roman',
+      'I' => 'upper-roman',
+      _ => ordered ? 'decimal' : 'disc',
+    };
+  }
+  final start =
+      int.tryParse(node.attributes['start'] ?? '') ??
+      (reversed ? node.children.where((e) => e.localName == 'li').length : 1);
+  return _EpubListState(ordered, start, reversed, type);
+}
+
+String _listStyleType(
+  html.Element node,
+  Map<html.Element, Map<String, String>> styles,
+) {
+  for (html.Element? at = node; at != null; at = at.parent) {
+    final value = styles[at]?['list-style-type'];
+    if (value != null && value.isNotEmpty) return value;
+  }
+  return '';
+}
+
+String _liMarker(
+  html.Element node,
+  List<_EpubListState> stack,
+  Map<html.Element, Map<String, String>> styles,
+) {
+  if (stack.isEmpty) return '';
+  final state = stack.last;
+  // Publisher CSS may override the marker on the item itself.
+  final type = styles[node]?['list-style-type'] ?? state.type;
+  if (!state.ordered) {
+    if (!_hasOwnContentBeforeNestedList(node)) return '';
+    return switch (type) {
+      'none' => '',
+      'circle' => '◦',
+      'square' => '▪',
+      _ => '•',
+    };
+  }
+  final number = int.tryParse(node.attributes['value'] ?? '') ?? state.next;
+  state.next = state.reversed ? number - 1 : number + 1;
+  if (!_hasOwnContentBeforeNestedList(node)) return '';
+  final text = switch (type) {
+    'none' => '',
+    'lower-alpha' || 'lower-latin' => _alphaMarker(number).toLowerCase(),
+    'upper-alpha' || 'upper-latin' => _alphaMarker(number),
+    'lower-roman' => _romanMarker(number).toLowerCase(),
+    'upper-roman' => _romanMarker(number),
+    'decimal-leading-zero' => number.toString().padLeft(2, '0'),
+    _ => '$number',
+  };
+  return text.isEmpty ? '' : '$text.';
+}
+
+/// List markers belong to the item's own prose, not to a nested list that
+/// happens to be its first child.
+bool _hasOwnContentBeforeNestedList(html.Element node) {
+  for (final child in node.nodes) {
+    if (child is html.Text && child.text.trim().isNotEmpty) return true;
+    if (child is html.Element) {
+      return child.localName != 'ul' && child.localName != 'ol';
+    }
+  }
+  return false;
+}
+
+String _alphaMarker(int value) {
+  if (value <= 0) return '$value';
+  final buffer = StringBuffer();
+  var number = value;
+  while (number > 0) {
+    number--;
+    buffer.writeCharCode(65 + number % 26);
+    number ~/= 26;
+  }
+  return String.fromCharCodes(buffer.toString().codeUnits.reversed);
+}
+
+String _romanMarker(int value) {
+  if (value <= 0 || value >= 4000) return '$value';
+  const table = [
+    (1000, 'M'),
+    (900, 'CM'),
+    (500, 'D'),
+    (400, 'CD'),
+    (100, 'C'),
+    (90, 'XC'),
+    (50, 'L'),
+    (40, 'XL'),
+    (10, 'X'),
+    (9, 'IX'),
+    (5, 'V'),
+    (4, 'IV'),
+    (1, 'I'),
+  ];
+  final buffer = StringBuffer();
+  var rest = value;
+  for (final (amount, letters) in table) {
+    while (rest >= amount) {
+      buffer.write(letters);
+      rest -= amount;
+    }
+  }
+  return buffer.toString();
+}
+
+/// EPUB 3 commonly wraps a single image in `<picture>` or authors only
+/// `srcset`. Pick the first local candidate; remote URLs still fail normally.
+String? _pictureSource(html.Element image) {
+  String? first(String? value) {
+    final text = value?.trim();
+    if (text == null || text.isEmpty) return null;
+    return text.split(',').first.trim().split(RegExp(r'\s+')).first;
+  }
+
+  final own = first(image.attributes['srcset']);
+  if (own != null) return own;
+  final picture = image.parent;
+  if (picture == null || picture.localName != 'picture') return null;
+  for (final source in picture.children.where((e) => e.localName == 'source')) {
+    final value = first(
+      source.attributes['srcset'] ?? source.attributes['src'],
+    );
+    if (value != null) return value;
+  }
+  return null;
 }
