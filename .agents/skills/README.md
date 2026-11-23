@@ -11,7 +11,7 @@
 | [icon-motion-design](icon-motion-design/SKILL.md) | 原创图标、状态姿态 SVG、图标动效与本地试验场评审 |
 | [local-library-integrity](local-library-integrity/SKILL.md) | 分类、系列、书籍 ID、持久化、进度、书签与备份 |
 | [reader-rendering](reader-rendering/SKILL.md) | 排版、分页、翻页、阅读坐标与性能 |
-| [run-wenku8](run-wenku8/SKILL.md) | 在模拟器 / 设备上构建、安装、打开并截图本项目应用 |
+| [wenku8-android-emulators](wenku8-android-emulators/SKILL.md) | 固定 Android 无头测试与可见验收环境 |
 | [source-boundary-audit](source-boundary-audit/SKILL.md) | 缺失源码、公开清单、新增文件、来源与分发边界 |
 
 ## 维护约定
